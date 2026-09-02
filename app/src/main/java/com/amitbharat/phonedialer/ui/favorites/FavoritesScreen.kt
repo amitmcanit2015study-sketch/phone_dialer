@@ -1,6 +1,5 @@
 package com.amitbharat.phonedialer.ui.favorites
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
@@ -25,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amitbharat.phonedialer.model.Contact
 import com.amitbharat.phonedialer.ui.theme.AccentGreen
+import com.amitbharat.phonedialer.utils.ContactAvatar
 
 @Composable
 fun FavoritesScreen(
@@ -52,80 +52,61 @@ fun FavoritesScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(favorites, key = { it.id }) { contact ->
-                FavoriteContactCard(
-                    contact = contact,
-                    onCall = { onCallClick(contact.numbers.firstOrNull() ?: "") },
-                    onMessage = {
-                        val num = contact.numbers.firstOrNull() ?: ""
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("sms:")))
-                    },
-                    onWhatsApp = {
-                        val num = contact.numbers.firstOrNull() ?: ""
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=")))
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        ContactAvatar(name = contact.name, photoUri = contact.photoUri, size = 64.dp, fontSize = 24.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = contact.name,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            maxLines = 1,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = contact.numbers.firstOrNull() ?: "",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            IconButton(
+                                onClick = { onCallClick(contact.numbers.firstOrNull() ?: "") },
+                                modifier = Modifier.size(38.dp).background(AccentGreen.copy(alpha = 0.15f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    val num = contact.numbers.firstOrNull() ?: ""
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("sms:")))
+                                },
+                                modifier = Modifier.size(38.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Message, contentDescription = "SMS", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(
+                                onClick = {
+                                    val num = contact.numbers.firstOrNull() ?: ""
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=")))
+                                },
+                                modifier = Modifier.size(38.dp).background(Color(0xFF25D366).copy(alpha = 0.15f), CircleShape)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = "WhatsApp", tint = Color(0xFF25D366), modifier = Modifier.size(20.dp))
+                            }
+                        }
                     }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun FavoriteContactCard(
-    contact: Contact,
-    onCall: () -> Unit,
-    onMessage: () -> Unit,
-    onWhatsApp: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = contact.name.take(1).uppercase(),
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = contact.name,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                maxLines = 1,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = contact.numbers.firstOrNull() ?: "",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                IconButton(onClick = onCall, modifier = Modifier.size(38.dp).background(AccentGreen.copy(alpha = 0.15f), CircleShape)) {
-                    Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onMessage, modifier = Modifier.size(38.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)) {
-                    Icon(Icons.Default.Message, contentDescription = "SMS", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                }
-                IconButton(onClick = onWhatsApp, modifier = Modifier.size(38.dp).background(Color(0xFF25D366).copy(alpha = 0.15f), CircleShape)) {
-                    Icon(Icons.Default.Share, contentDescription = "WhatsApp", tint = Color(0xFF25D366), modifier = Modifier.size(20.dp))
                 }
             }
         }

@@ -1,16 +1,20 @@
 package com.amitbharat.phonedialer.repository
 
+import android.content.ContentResolver
 import android.content.Context
+import android.provider.CallLog
 import com.amitbharat.phonedialer.database.AppDatabase
 import com.amitbharat.phonedialer.database.entity.CallLogEntity
 import com.amitbharat.phonedialer.database.entity.SpeedDialEntity
 import com.amitbharat.phonedialer.model.CallLogItem
 import com.amitbharat.phonedialer.model.CallType
 import com.amitbharat.phonedialer.model.SpeedDialItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
-class CallLogRepository(context: Context) {
+class CallLogRepository(private val context: Context) {
 
     private val db = AppDatabase.getInstance(context)
     private val callLogDao = db.callLogDao()
@@ -18,18 +22,6 @@ class CallLogRepository(context: Context) {
 
     fun getAllCallLogs(): Flow<List<CallLogItem>> {
         return callLogDao.getAllCallLogs().map { list ->
-            list.map { it.toModel() }
-        }
-    }
-
-    fun getMissedCalls(): Flow<List<CallLogItem>> {
-        return callLogDao.getMissedCalls().map { list ->
-            list.map { it.toModel() }
-        }
-    }
-
-    fun getRecordedCalls(): Flow<List<CallLogItem>> {
-        return callLogDao.getRecordedCalls().map { list ->
             list.map { it.toModel() }
         }
     }
@@ -54,6 +46,62 @@ class CallLogRepository(context: Context) {
 
     suspend fun clearCallLogs() {
         callLogDao.clearCallLogs()
+    }
+
+    suspend fun syncDeviceCallLogs() = withContext(Dispatchers.IO) {
+        try {
+            val resolver: ContentResolver = context.contentResolver
+            val cursor = resolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(
+                    CallLog.Calls.NUMBER,
+                    CallLog.Calls.CACHED_NAME,
+                    CallLog.Calls.TYPE,
+                    CallLog.Calls.DATE,
+                    CallLog.Calls.DURATION
+                ),
+                null,
+                null,
+                CallLog.Calls.DATE + " DESC LIMIT 200"
+            )
+
+            cursor?.use {
+                val numIdx = it.getColumnIndex(CallLog.Calls.NUMBER)
+                val nameIdx = it.getColumnIndex(CallLog.Calls.CACHED_NAME)
+                val typeIdx = it.getColumnIndex(CallLog.Calls.TYPE)
+                val dateIdx = it.getColumnIndex(CallLog.Calls.DATE)
+                val durIdx = it.getColumnIndex(CallLog.Calls.DURATION)
+
+                while (it.moveToNext()) {
+                    val number = if (numIdx >= 0) it.getString(numIdx) ?: "" else ""
+                    val name = if (nameIdx >= 0) it.getString(nameIdx) else null
+                    val rawType = if (typeIdx >= 0) it.getInt(typeIdx) else CallLog.Calls.OUTGOING_TYPE
+                    val date = if (dateIdx >= 0) it.getLong(dateIdx) else System.currentTimeMillis()
+                    val duration = if (durIdx >= 0) it.getLong(durIdx) else 0L
+
+                    val callType = when (rawType) {
+                        CallLog.Calls.INCOMING_TYPE -> CallType.INCOMING
+                        CallLog.Calls.OUTGOING_TYPE -> CallType.OUTGOING
+                        CallLog.Calls.MISSED_TYPE -> CallType.MISSED
+                        CallLog.Calls.REJECTED_TYPE -> CallType.REJECTED
+                        CallLog.Calls.BLOCKED_TYPE -> CallType.BLOCKED
+                        else -> CallType.INCOMING
+                    }
+
+                    if (number.isNotBlank()) {
+                        val entity = CallLogEntity(
+                            number = number,
+                            name = name,
+                            callType = callType.name,
+                            timestamp = date,
+                            duration = duration,
+                            simSlot = 0
+                        )
+                        callLogDao.insertCallLog(entity)
+                    }
+                }
+            }
+        } catch (ignored: Exception) {}
     }
 
     // Speed Dial

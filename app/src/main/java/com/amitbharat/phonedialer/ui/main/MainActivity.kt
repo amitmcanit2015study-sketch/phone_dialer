@@ -32,6 +32,9 @@ class MainActivity : ComponentActivity() {
         if (permissions[Manifest.permission.READ_CONTACTS] == true) {
             lifecycleScope.launch { contactsRepo.syncDeviceContacts() }
         }
+        if (permissions[Manifest.permission.READ_CALL_LOG] == true) {
+            lifecycleScope.launch { callLogRepo.syncDeviceCallLogs() }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,11 +77,22 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch { callLogRepo.deleteCallLog(id) }
                     },
                     onSyncDeviceContacts = {
-                        lifecycleScope.launch { contactsRepo.syncDeviceContacts() }
+                        lifecycleScope.launch {
+                            contactsRepo.syncDeviceContacts()
+                            callLogRepo.syncDeviceCallLogs()
+                        }
                     },
                     onThemeChange = { mode -> themeMode = mode }
                 )
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            contactsRepo.syncDeviceContacts()
+            callLogRepo.syncDeviceCallLogs()
         }
     }
 
@@ -104,7 +118,10 @@ class MainActivity : ComponentActivity() {
         if (needed.isNotEmpty()) {
             permissionLauncher.launch(needed.toTypedArray())
         } else {
-            lifecycleScope.launch { contactsRepo.syncDeviceContacts() }
+            lifecycleScope.launch {
+                contactsRepo.syncDeviceContacts()
+                callLogRepo.syncDeviceCallLogs()
+            }
         }
     }
 }

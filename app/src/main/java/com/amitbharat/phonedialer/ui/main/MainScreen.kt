@@ -16,13 +16,11 @@ import com.amitbharat.phonedialer.model.SpeedDialItem
 import com.amitbharat.phonedialer.ui.contacts.ContactsScreen
 import com.amitbharat.phonedialer.ui.dialer.DialerScreen
 import com.amitbharat.phonedialer.ui.favorites.FavoritesScreen
-import com.amitbharat.phonedialer.ui.history.HistoryScreen
 import com.amitbharat.phonedialer.ui.settings.SettingsScreen
 import com.amitbharat.phonedialer.utils.ThemeMode
 
 enum class MainTab {
     DIALER,
-    RECENTS,
     CONTACTS,
     FAVORITES,
     SETTINGS
@@ -53,7 +51,6 @@ fun MainScreen(
                         Text(
                             text = when (currentTab) {
                                 MainTab.DIALER -> "Phone Dialer"
-                                MainTab.RECENTS -> "Recents"
                                 MainTab.CONTACTS -> "Contacts"
                                 MainTab.FAVORITES -> "Favorites"
                                 MainTab.SETTINGS -> "Settings"
@@ -78,14 +75,8 @@ fun MainScreen(
                 NavigationBarItem(
                     selected = currentTab == MainTab.DIALER,
                     onClick = { currentTab = MainTab.DIALER },
-                    icon = { Icon(Icons.Default.Dialpad, contentDescription = "Dialer") },
+                    icon = { Icon(Icons.Default.Call, contentDescription = "Dialer") },
                     label = { Text("Dialer", fontSize = 12.sp) }
-                )
-                NavigationBarItem(
-                    selected = currentTab == MainTab.RECENTS,
-                    onClick = { currentTab = MainTab.RECENTS },
-                    icon = { Icon(Icons.Default.History, contentDescription = "Recents") },
-                    label = { Text("Recents", fontSize = 12.sp) }
                 )
                 NavigationBarItem(
                     selected = currentTab == MainTab.CONTACTS,
@@ -112,13 +103,11 @@ fun MainScreen(
             when (currentTab) {
                 MainTab.DIALER -> DialerScreen(
                     allContacts = contacts,
-                    speedDials = speedDials,
-                    onCallClick = { num, sim -> onCallClick(num, sim) }
-                )
-                MainTab.RECENTS -> HistoryScreen(
+                    favorites = favorites,
                     callLogs = callLogs,
-                    onCallClick = { num -> onCallClick(num, 0) },
-                    onDeleteClick = onDeleteCallLog
+                    speedDials = speedDials,
+                    onCallClick = onCallClick,
+                    onDeleteCallLog = onDeleteCallLog
                 )
                 MainTab.CONTACTS -> ContactsScreen(
                     contacts = contacts,

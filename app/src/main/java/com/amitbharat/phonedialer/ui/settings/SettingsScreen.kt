@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.telecom.TelecomManager
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,7 +23,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.amitbharat.phonedialer.telecom.TelecomHelper
 import com.amitbharat.phonedialer.utils.PreferencesManager
 import com.amitbharat.phonedialer.utils.ThemeMode
 import java.io.File
@@ -35,7 +35,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val prefs = remember { PreferencesManager.getInstance(context) }
     var currentTheme by remember { mutableStateOf(prefs.getThemeMode()) }
-    var isAutoRecord by remember { mutableStateOf(prefs.isAutoCallRecordingEnabled()) }
+    var isAutoRecordAll by remember { mutableStateOf(prefs.isAutoCallRecordingEnabled()) }
     var isVibration by remember { mutableStateOf(prefs.isVibrationEnabled()) }
     var isSound by remember { mutableStateOf(prefs.isDialpadSoundEnabled()) }
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -74,7 +74,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Set Phone Dialer as your default calling app to enable in-call full screen, call recording, and incoming call alerts.",
+                        text = "Enable Phone Dialer as your default calling app to unlock full-screen in-call alerts, call recording, and seamless phone management.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                     )
@@ -86,11 +86,72 @@ fun SettingsScreen(
             }
         }
 
-        // 2. Appearance & Themes
+        // 2. Call Recording Controls
         item {
             Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Appearance", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("??? Call Recording", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Record All Calls Automatically", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text("Automatically record every incoming and outgoing call", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isAutoRecordAll,
+                            onCheckedChange = {
+                                isAutoRecordAll = it
+                                prefs.setAutoCallRecordingEnabled(it)
+                                Toast.makeText(context, if (it) "Auto recording enabled" else "Auto recording disabled", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3. Sound & Vibration Feedback
+        item {
+            Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("?? Sound & Haptics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Keypad Vibration Feedback", fontSize = 15.sp)
+                        Switch(checked = isVibration, onCheckedChange = {
+                            isVibration = it
+                            prefs.setVibrationEnabled(it)
+                        })
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Keypad Audio Tones", fontSize = 15.sp)
+                        Switch(checked = isSound, onCheckedChange = {
+                            isSound = it
+                            prefs.setDialpadSoundEnabled(it)
+                        })
+                    }
+                }
+            }
+        }
+
+        // 4. Themes & Display
+        item {
+            Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("?? Appearance & Themes", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.height(10.dp))
                     listOf(
                         ThemeMode.SYSTEM to "System Default",
@@ -122,55 +183,7 @@ fun SettingsScreen(
             }
         }
 
-        // 3. Call Settings
-        item {
-            Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Calling & Feedback", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Auto Call Recording", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text("Automatically record incoming and outgoing calls", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(checked = isAutoRecord, onCheckedChange = {
-                            isAutoRecord = it
-                            prefs.setAutoCallRecordingEnabled(it)
-                        })
-                    }
-                    Divider(modifier = Modifier.padding(vertical = 6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Dialpad Vibration Feedback", fontSize = 15.sp)
-                        Switch(checked = isVibration, onCheckedChange = {
-                            isVibration = it
-                            prefs.setVibrationEnabled(it)
-                        })
-                    }
-                    Divider(modifier = Modifier.padding(vertical = 6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Dialpad Audio Tone", fontSize = 15.sp)
-                        Switch(checked = isSound, onCheckedChange = {
-                            isSound = it
-                            prefs.setDialpadSoundEnabled(it)
-                        })
-                    }
-                }
-            }
-        }
-
-        // 4. About & Developer Info
+        // 5. About & Developer Info
         item {
             Card(
                 shape = RoundedCornerShape(16.dp),

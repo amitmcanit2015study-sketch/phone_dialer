@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amitbharat.phonedialer.model.Contact
 import com.amitbharat.phonedialer.ui.theme.AccentGreen
+import com.amitbharat.phonedialer.utils.ContactAvatar
 
 @Composable
 fun ContactsScreen(
@@ -35,7 +36,6 @@ fun ContactsScreen(
     onSyncDeviceContacts: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -73,7 +73,7 @@ fun ContactsScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search contacts…") },
+                    placeholder = { Text("Search  contacts…") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
@@ -156,20 +156,12 @@ fun ContactItemRow(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = contact.name.take(1).uppercase(),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
+            ContactAvatar(
+                name = contact.name,
+                photoUri = contact.photoUri,
+                size = 46.dp,
+                fontSize = 18.sp
+            )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = contact.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
@@ -191,17 +183,26 @@ fun ContactItemRow(
     if (showSheet) {
         AlertDialog(
             onDismissRequest = { showSheet = false },
-            title = { Text(contact.name, fontWeight = FontWeight.Bold) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ContactAvatar(name = contact.name, photoUri = contact.photoUri, size = 52.dp, fontSize = 20.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(contact.numbers.firstOrNull() ?: "", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
             text = {
                 Column {
                     contact.numbers.forEach { num ->
-                        Text("Phone: ", fontSize = 15.sp)
+                        Text("?? Phone: ", fontSize = 15.sp, modifier = Modifier.padding(vertical = 2.dp))
                     }
                     if (!contact.email.isNullOrBlank()) {
-                        Text("Email: ", fontSize = 14.sp)
+                        Text("?? Email: ", fontSize = 14.sp, modifier = Modifier.padding(vertical = 2.dp))
                     }
                     if (!contact.notes.isNullOrBlank()) {
-                        Text("Notes: ", fontSize = 14.sp)
+                        Text("?? Notes: ", fontSize = 14.sp, modifier = Modifier.padding(vertical = 2.dp))
                     }
                 }
             },
