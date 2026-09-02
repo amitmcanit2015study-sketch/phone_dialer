@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">फोन डायलर</string>
+    <string name="app_header_subtitle">द्वारा अमित भारत</string>
+    <string name="developer_name">अमित भारत</string>
+    <string name="developed_by">डेवलपर: अमित भारत</string>
+    <string name="company_name">रूयस सॉफ्ट टेक</string>
+    <string name="company_email">rooyssofttech2020@gmail.com</string>
+    <string name="app_version_name">v1.0.0.1 (प्रोडक्शन बिल्ड)</string>
+    <string name="nav_dialer">डायलर</string>
+    <string name="nav_recents">हालिया कॉल</string>
+    <string name="nav_contacts">संपर्क</string>
+    <string name="nav_favorites">पसंदीदा</string>
+    <string name="action_settings">सेटिंग्स</string>
+    <string name="action_about">ऐप के बारे में</string>
+    <string name="share_app">ऐप साझा करें</string>
+    <string name="download_apk">डाउनलोड APK</string>
+    <string name="send_feedback">प्रतिक्रिया भेजें</string>
+    <string name="search_hint">संपर्क व नंबर खोजें…</string>
+    <string name="call_duration">अवधि</string>
+    <string name="set_default_dialer_title">डिफ़ॉल्ट फोन ऐप बनाएं</string>
+    <string name="set_default_dialer_desc">कॉल प्रबंधित करने, इनकमिंग अलर्ट और कॉल रिकॉर्डिंग के लिए फोन डायलर को डिफ़ॉल्ट ऐप बनाएं।</string>
+    <string name="btn_set_default">डिफ़ॉल्ट बनाएं</string>
+    <string name="about_description">फोन डायलर एक तेज़, सुरक्षित और आधुनिक कॉलिंग ऐप है जो स्मार्ट T9 सर्च, संपर्क प्रबंधन, स्पीड डायल और कॉल रिकॉर्डिंग प्रदान करता है।</string>
+</resources>
