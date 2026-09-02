@@ -1,9 +1,13 @@
 package com.amitbharat.phonedialer.ui.main
 
 import android.Manifest
+import android.app.role.RoleManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.telecom.TelecomManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +39,13 @@ class MainActivity : ComponentActivity() {
         if (permissions[Manifest.permission.READ_CALL_LOG] == true) {
             lifecycleScope.launch { callLogRepo.syncDeviceCallLogs() }
         }
+        checkDefaultDialerRole()
+    }
+
+    private val defaultDialerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Handled default dialer result
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,6 +107,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun checkDefaultDialerRole() {
+        if (!TelecomHelper.isDefaultDialer(this)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = getSystemService(Context.ROLE_SERVICE) as? RoleManager
+                roleManager?.createRequestRoleIntent(RoleManager.ROLE_DIALER)?.let {
+                    defaultDialerLauncher.launch(it)
+                }
+            } else {
+                val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
+                    putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, packageName)
+                }
+                defaultDialerLauncher.launch(intent)
+            }
+        }
+    }
+
     private fun requestRequiredPermissions() {
         val permissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
@@ -122,6 +149,7 @@ class MainActivity : ComponentActivity() {
                 contactsRepo.syncDeviceContacts()
                 callLogRepo.syncDeviceCallLogs()
             }
+            checkDefaultDialerRole()
         }
     }
 }

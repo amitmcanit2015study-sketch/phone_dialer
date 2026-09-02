@@ -11,6 +11,8 @@ import com.amitbharat.phonedialer.model.CallType
 import com.amitbharat.phonedialer.model.SpeedDialItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
@@ -20,11 +22,18 @@ class CallLogRepository(private val context: Context) {
     private val callLogDao = db.callLogDao()
     private val speedDialDao = db.speedDialDao()
 
-    fun getAllCallLogs(): Flow<List<CallLogItem>> {
-        return callLogDao.getAllCallLogs().map { list ->
-            list.map { it.toModel() }
+    fun getAllCallLogs(): Flow<List<CallLogItem>> = flow {
+        // 1. Emit live call logs directly from device CallLog.Calls
+        val deviceLogs = fetchDeviceCallLogsDirectly()
+        emit(deviceLogs)
+
+        // 2. Also observe database updates
+        callLogDao.getAllCallLogs().map { list ->
+            if (list.isNotEmpty()) list.map { it.toModel() } else deviceLogs
+        }.collect {
+            emit(it)
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
     suspend fun addCallLog(item: CallLogItem): Long {
         val entity = CallLogEntity(
@@ -48,12 +57,14 @@ class CallLogRepository(private val context: Context) {
         callLogDao.clearCallLogs()
     }
 
-    suspend fun syncDeviceCallLogs() = withContext(Dispatchers.IO) {
+    fun fetchDeviceCallLogsDirectly(): List<CallLogItem> {
+        val result = mutableListOf<CallLogItem>()
         try {
             val resolver: ContentResolver = context.contentResolver
             val cursor = resolver.query(
                 CallLog.Calls.CONTENT_URI,
                 arrayOf(
+                    CallLog.Calls._ID,
                     CallLog.Calls.NUMBER,
                     CallLog.Calls.CACHED_NAME,
                     CallLog.Calls.TYPE,
@@ -62,10 +73,11 @@ class CallLogRepository(private val context: Context) {
                 ),
                 null,
                 null,
-                CallLog.Calls.DATE + " DESC LIMIT 200"
+                CallLog.Calls.DATE + " DESC LIMIT 500"
             )
 
             cursor?.use {
+                val idIdx = it.getColumnIndex(CallLog.Calls._ID)
                 val numIdx = it.getColumnIndex(CallLog.Calls.NUMBER)
                 val nameIdx = it.getColumnIndex(CallLog.Calls.CACHED_NAME)
                 val typeIdx = it.getColumnIndex(CallLog.Calls.TYPE)
@@ -73,6 +85,7 @@ class CallLogRepository(private val context: Context) {
                 val durIdx = it.getColumnIndex(CallLog.Calls.DURATION)
 
                 while (it.moveToNext()) {
+                    val id = if (idIdx >= 0) it.getLong(idIdx) else 0L
                     val number = if (numIdx >= 0) it.getString(numIdx) ?: "" else ""
                     val name = if (nameIdx >= 0) it.getString(nameIdx) else null
                     val rawType = if (typeIdx >= 0) it.getInt(typeIdx) else CallLog.Calls.OUTGOING_TYPE
@@ -89,19 +102,39 @@ class CallLogRepository(private val context: Context) {
                     }
 
                     if (number.isNotBlank()) {
-                        val entity = CallLogEntity(
-                            number = number,
-                            name = name,
-                            callType = callType.name,
-                            timestamp = date,
-                            duration = duration,
-                            simSlot = 0
+                        result.add(
+                            CallLogItem(
+                                id = id,
+                                number = number,
+                                name = if (!name.isNullOrBlank()) name else null,
+                                callType = callType,
+                                timestamp = date,
+                                duration = duration,
+                                simSlot = 0
+                            )
                         )
-                        callLogDao.insertCallLog(entity)
                     }
                 }
             }
-        } catch (ignored: Exception) {}
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return result
+    }
+
+    suspend fun syncDeviceCallLogs() = withContext(Dispatchers.IO) {
+        val list = fetchDeviceCallLogsDirectly()
+        list.forEach { item ->
+            val entity = CallLogEntity(
+                number = item.number,
+                name = item.name,
+                callType = item.callType.name,
+                timestamp = item.timestamp,
+                duration = item.duration,
+                simSlot = item.simSlot
+            )
+            callLogDao.insertCallLog(entity)
+        }
     }
 
     // Speed Dial

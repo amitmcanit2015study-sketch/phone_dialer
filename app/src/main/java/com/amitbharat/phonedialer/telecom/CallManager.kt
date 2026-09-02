@@ -1,15 +1,15 @@
 package com.amitbharat.phonedialer.telecom
 
 import android.content.Context
-import android.media.AudioDeviceInfo
-import android.media.AudioManager
+import android.database.Cursor
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.ContactsContract
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.VideoProfile
-import androidx.compose.runtime.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +19,8 @@ data class ActiveCallState(
     val callState: Int = Call.STATE_DISCONNECTED, // RINGING, DIALING, ACTIVE, HOLDING, etc.
     val number: String = "",
     val callerName: String? = null,
+    val photoUri: String? = null,
+    val carrierLabel: String = "Calling via SIM 1",
     val isIncoming: Boolean = false,
     val isMuted: Boolean = false,
     val isSpeakerOn: Boolean = false,
@@ -50,11 +52,11 @@ object CallManager {
         }
     }
 
-    fun setCall(call: Call) {
+    fun setCall(call: Call, context: Context? = null) {
         currentCall?.unregisterCallback(callCallback)
         currentCall = call
         call.registerCallback(callCallback)
-        updateStateFromCall(call)
+        updateStateFromCall(call, context)
     }
 
     fun clearCall() {
@@ -105,10 +107,39 @@ object CallManager {
         _callState.value = _callState.value.copy(isRecording = isRecording)
     }
 
-    private fun updateStateFromCall(call: Call) {
+    private fun updateStateFromCall(call: Call, context: Context? = null) {
         val handle = call.details.handle
         val number = handle?.schemeSpecificPart ?: ""
-        val callerName = call.details.callerDisplayName
+        var callerName = call.details.callerDisplayName
+        var photoUri: String? = null
+
+        // Lookup contact details if context is available
+        if (context != null && number.isNotBlank()) {
+            try {
+                val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
+                val cursor: Cursor? = context.contentResolver.query(
+                    uri,
+                    arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME, ContactsContract.PhoneLookup.PHOTO_URI),
+                    null,
+                    null,
+                    null
+                )
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val nameIdx = it.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                        val photoIdx = it.getColumnIndex(ContactsContract.PhoneLookup.PHOTO_URI)
+                        if (nameIdx >= 0) {
+                            val name = it.getString(nameIdx)
+                            if (!name.isNullOrBlank()) callerName = name
+                        }
+                        if (photoIdx >= 0) {
+                            photoUri = it.getString(photoIdx)
+                        }
+                    }
+                }
+            } catch (ignored: Exception) {}
+        }
+
         val isIncoming = call.state == Call.STATE_RINGING
 
         if (call.state == Call.STATE_ACTIVE && durationTimer == null) {
@@ -122,6 +153,7 @@ object CallManager {
             callState = call.state,
             number = number,
             callerName = if (!callerName.isNullOrEmpty()) callerName else null,
+            photoUri = photoUri,
             isIncoming = isIncoming,
             isHeld = call.state == Call.STATE_HOLDING
         )
