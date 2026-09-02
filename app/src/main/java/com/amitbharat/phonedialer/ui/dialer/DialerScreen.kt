@@ -27,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -48,6 +47,21 @@ import com.amitbharat.phonedialer.utils.PreferencesManager
 import java.text.SimpleDateFormat
 import java.util.*
 
+data class ConsolidatedCallLog(
+    val primaryId: Long,
+    val name: String?,
+    val number: String,
+    val latestTimestamp: Long,
+    val totalCount: Int,
+    val incomingCount: Int,
+    val outgoingCount: Int,
+    val missedCount: Int,
+    val latestCallType: CallType,
+    val totalDuration: Long,
+    val hasRecording: Boolean,
+    val calls: List<CallLogItem>
+)
+
 @Composable
 fun DialerScreen(
     allContacts: List<Contact>,
@@ -63,22 +77,63 @@ fun DialerScreen(
     var enteredNumber by remember { mutableStateOf("") }
     var isDialpadOpen by remember { mutableStateOf(false) }
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
-    var selectedCallLogForDetails by remember { mutableStateOf<CallLogItem?>(null) }
+    var selectedGroupForDetails by remember { mutableStateOf<ConsolidatedCallLog?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val allCount = callLogs.size
-    val missedCount = remember(callLogs) { callLogs.count { it.callType == CallType.MISSED || it.callType == CallType.REJECTED } }
-    val receivedCount = remember(callLogs) { callLogs.count { it.callType == CallType.INCOMING } }
-    val dialedCount = remember(callLogs) { callLogs.count { it.callType == CallType.OUTGOING } }
-    val recordedCount = remember(callLogs) { callLogs.count { it.recordingPath != null } }
+    // 1. Group consecutive / same number calls into ConsolidatedCallLog
+    val consolidatedLogs = remember(callLogs) {
+        val groupedList = mutableListOf<ConsolidatedCallLog>()
+        val map = LinkedHashMap<String, MutableList<CallLogItem>>()
 
-    val filteredLogs = remember(selectedFilterIndex, callLogs, searchQuery) {
+        // Normalize key by phone number or name
+        for (item in callLogs) {
+            val key = item.name?.trim()?.ifBlank { null } ?: item.number.replace("[^0-9+]".toRegex(), "")
+            map.getOrPut(key) { mutableListOf() }.add(item)
+        }
+
+        map.values.forEach { items ->
+            val first = items.first()
+            val total = items.size
+            val incoming = items.count { it.callType == CallType.INCOMING }
+            val outgoing = items.count { it.callType == CallType.OUTGOING }
+            val missed = items.count { it.callType == CallType.MISSED || it.callType == CallType.REJECTED }
+            val dur = items.sumOf { it.duration }
+            val hasRec = items.any { it.recordingPath != null }
+
+            groupedList.add(
+                ConsolidatedCallLog(
+                    primaryId = first.id,
+                    name = first.name,
+                    number = first.number,
+                    latestTimestamp = first.timestamp,
+                    totalCount = total,
+                    incomingCount = incoming,
+                    outgoingCount = outgoing,
+                    missedCount = missed,
+                    latestCallType = first.callType,
+                    totalDuration = dur,
+                    hasRecording = hasRec,
+                    calls = items
+                )
+            )
+        }
+        groupedList
+    }
+
+    // Counts for sub-filters (Live & Accurate)
+    val totalCallsCount = consolidatedLogs.size
+    val missedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.missedCount > 0 } }
+    val receivedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.incomingCount > 0 } }
+    val dialedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.outgoingCount > 0 } }
+    val recordedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.hasRecording } }
+
+    val filteredList = remember(selectedFilterIndex, consolidatedLogs, searchQuery) {
         val base = when (selectedFilterIndex) {
-            1 -> callLogs.filter { it.callType == CallType.MISSED || it.callType == CallType.REJECTED }
-            2 -> callLogs.filter { it.callType == CallType.INCOMING }
-            3 -> callLogs.filter { it.callType == CallType.OUTGOING }
-            4 -> callLogs.filter { it.recordingPath != null }
-            else -> callLogs
+            1 -> consolidatedLogs.filter { it.missedCount > 0 }
+            2 -> consolidatedLogs.filter { it.incomingCount > 0 }
+            3 -> consolidatedLogs.filter { it.outgoingCount > 0 }
+            4 -> consolidatedLogs.filter { it.hasRecording }
+            else -> consolidatedLogs
         }
         if (searchQuery.isBlank()) base
         else base.filter {
@@ -134,18 +189,14 @@ fun DialerScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 6.dp),
                 shape = RoundedCornerShape(20.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+                singleLine = true
             )
 
-            // 2. Horizontal Favorites Bar
+            // 2. Horizontal Favorites Bar (Deduplicated)
             if (favorites.isNotEmpty() && searchQuery.isEmpty()) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp)) {
                     Text(
-                        text = "? FAVORITES",
+                        text = "? FAVORITES ()",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -175,7 +226,7 @@ fun DialerScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.widthIn(max = 64.dp),
+                                    modifier = Modifier.widthIn(max = 68.dp),
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -185,7 +236,7 @@ fun DialerScreen(
                 }
             }
 
-            // 3. Sub-Filter Badges Row
+            // 3. Sub-Filter Badges Row with Real Counts
             ScrollableTabRow(
                 selectedTabIndex = selectedFilterIndex,
                 edgePadding = 12.dp,
@@ -219,8 +270,8 @@ fun DialerScreen(
                 )
             }
 
-            // 4. Call History List
-            if (filteredLogs.isEmpty()) {
+            // 4. Consolidated Call History List
+            if (filteredList.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentAlignment = Alignment.Center
@@ -228,37 +279,49 @@ fun DialerScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(54.dp))
                         Spacer(Modifier.height(8.dp))
-                        Text("No call history found", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text("No call history in this category", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp, vertical = 2.dp)
                 ) {
-                    items(filteredLogs, key = { it.id }) { log ->
-                        val (icon, tint, typeLabel) = when (log.callType) {
-                            CallType.INCOMING -> Triple(Icons.AutoMirrored.Filled.CallReceived, AccentGreen, "Received")
-                            CallType.OUTGOING -> Triple(Icons.AutoMirrored.Filled.CallMade, Color(0xFF3B82F6), "Dialed")
-                            CallType.MISSED -> Triple(Icons.AutoMirrored.Filled.CallMissed, AccentRed, "Missed")
-                            CallType.REJECTED -> Triple(Icons.Default.CallEnd, AccentRed, "Rejected")
-                            CallType.BLOCKED -> Triple(Icons.Default.Block, Color.Gray, "Blocked")
+                    items(filteredList, key = { it.primaryId.toString() + it.number }) { group ->
+                        val (icon, tint) = when (group.latestCallType) {
+                            CallType.INCOMING -> Pair(Icons.AutoMirrored.Filled.CallReceived, AccentGreen)
+                            CallType.OUTGOING -> Pair(Icons.AutoMirrored.Filled.CallMade, Color(0xFF3B82F6))
+                            CallType.MISSED -> Pair(Icons.AutoMirrored.Filled.CallMissed, AccentRed)
+                            CallType.REJECTED -> Pair(Icons.Default.CallEnd, AccentRed)
+                            CallType.BLOCKED -> Pair(Icons.Default.Block, Color.Gray)
                         }
 
-                        val timeFormatted = remember(log.timestamp) {
-                            val diff = System.currentTimeMillis() - log.timestamp
+                        val timeFormatted = remember(group.latestTimestamp) {
+                            val diff = System.currentTimeMillis() - group.latestTimestamp
                             val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
                             if (diff < 24 * 60 * 60 * 1000) {
-                                SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(log.timestamp))
+                                "Today, " + SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(group.latestTimestamp))
+                            } else if (diff < 48 * 60 * 60 * 1000) {
+                                "Yesterday, " + SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(group.latestTimestamp))
                             } else {
-                                sdf.format(Date(log.timestamp))
+                                sdf.format(Date(group.latestTimestamp))
                             }
+                        }
+
+                        // Summary breakdown: e.g. "4 Dialed • 3 Received • 1 Missed"
+                        val breakdownText = buildString {
+                            val parts = mutableListOf<String>()
+                            if (group.outgoingCount > 0) parts.add(" Dialed")
+                            if (group.incomingCount > 0) parts.add(" Received")
+                            if (group.missedCount > 0) parts.add(" Missed")
+                            append(parts.joinToString(" • "))
+                            append(" • ")
                         }
 
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 3.dp)
-                                .clickable { selectedCallLogForDetails = log },
+                                .clickable { selectedGroupForDetails = group },
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             shape = RoundedCornerShape(16.dp),
                             elevation = CardDefaults.cardElevation(2.dp)
@@ -268,45 +331,57 @@ fun DialerScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 ContactAvatar(
-                                    name = log.name ?: log.number,
-                                    photoUri = allContacts.find { it.name == log.name }?.photoUri,
+                                    name = group.name ?: group.number,
+                                    photoUri = allContacts.find { it.name == group.name }?.photoUri,
                                     size = 48.dp,
                                     fontSize = 18.sp
                                 )
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = log.name ?: log.number,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = if (log.callType == CallType.MISSED) AccentRed else MaterialTheme.colorScheme.onSurface
-                                    )
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(icon, contentDescription = typeLabel, tint = tint, modifier = Modifier.size(14.dp))
+                                        Text(
+                                            text = group.name ?: group.number,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = if (group.missedCount > 0 && group.latestCallType == CallType.MISSED) AccentRed else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (group.totalCount > 1) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Surface(
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant
+                                            ) {
+                                                Text(
+                                                    text = "()",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
                                         Spacer(Modifier.width(4.dp))
                                         Text(
-                                            text = " • ",
+                                            text = breakdownText,
                                             fontSize = 12.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        if (log.duration > 0) {
-                                            Text(
-                                                text = " (s)",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        if (log.recordingPath != null) {
+                                        if (group.hasRecording) {
                                             Spacer(Modifier.width(4.dp))
                                             Text("???", fontSize = 12.sp)
                                         }
                                     }
                                 }
                                 IconButton(
-                                    onClick = { onCallClick(log.number, 0) },
+                                    onClick = { onCallClick(group.number, 0) },
                                     modifier = Modifier
                                         .size(42.dp)
                                         .background(AccentGreen.copy(alpha = 0.15f), CircleShape)
@@ -485,33 +560,35 @@ fun DialerScreen(
         }
     }
 
-    // Call Details Dialog
-    selectedCallLogForDetails?.let { log ->
-        val fullDate = SimpleDateFormat("EEEE, dd MMMM yyyy, hh:mm:ss a", Locale.getDefault()).format(Date(log.timestamp))
-        val mins = log.duration / 60
-        val secs = log.duration % 60
-        val durText = if (mins > 0) "m s" else "s"
+    // Consolidated Call Details Dialog (Shows all historical calls for this contact)
+    selectedGroupForDetails?.let { group ->
+        val fullDate = SimpleDateFormat("EEEE, dd MMMM yyyy, hh:mm:ss a", Locale.getDefault()).format(Date(group.latestTimestamp))
+        val totalMins = group.totalDuration / 60
+        val totalSecs = group.totalDuration % 60
+        val totalDurText = if (totalMins > 0) "m s" else "s"
 
         AlertDialog(
-            onDismissRequest = { selectedCallLogForDetails = null },
+            onDismissRequest = { selectedGroupForDetails = null },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    ContactAvatar(name = log.name ?: log.number, size = 50.dp, fontSize = 20.sp)
+                    ContactAvatar(name = group.name ?: group.number, size = 50.dp, fontSize = 20.sp)
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text(log.name ?: log.number, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Text(log.number, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(group.name ?: group.number, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(group.number, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },
             text = {
                 Column(modifier = Modifier.padding(top = 8.dp)) {
-                    Text("Type: ", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("Total Calls: ", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text("Time: ", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Breakdown:  Dialed •  Received •  Missed", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(4.dp))
-                    Text("Duration: ", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (log.recordingPath != null) {
+                    Text("Latest Call: ", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Total Duration: ", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (group.hasRecording) {
                         Spacer(Modifier.height(4.dp))
                         Text("Recording: Available ???", fontSize = 13.sp, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
                     }
@@ -520,8 +597,8 @@ fun DialerScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        selectedCallLogForDetails = null
-                        onCallClick(log.number, 0)
+                        selectedGroupForDetails = null
+                        onCallClick(group.number, 0)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
                 ) {
@@ -534,7 +611,7 @@ fun DialerScreen(
                 Row {
                     OutlinedButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Phone Number", log.number))
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Phone Number", group.number))
                         Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                     }) {
                         Text("Copy")
@@ -542,7 +619,7 @@ fun DialerScreen(
                     Spacer(Modifier.width(6.dp))
                     OutlinedButton(onClick = {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("sms:")))
-                        selectedCallLogForDetails = null
+                        selectedGroupForDetails = null
                     }) {
                         Text("SMS")
                     }
@@ -551,7 +628,6 @@ fun DialerScreen(
         )
     }
 }
-
 @Composable
 fun DialKeyModern(
     digit: String,

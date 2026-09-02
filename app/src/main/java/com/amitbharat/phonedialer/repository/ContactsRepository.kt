@@ -23,11 +23,9 @@ class ContactsRepository(private val context: Context) {
     private val type = object : TypeToken<List<String>>() {}.type
 
     fun getAllContacts(): Flow<List<Contact>> = flow {
-        // 1. Emit live contacts directly from device ContentResolver immediately
         val deviceContacts = fetchDeviceContactsDirectly()
         emit(deviceContacts)
 
-        // 2. Also observe database updates
         contactDao.getAllContacts().map { list ->
             if (list.isNotEmpty()) list.map { it.toModel(gson, type) } else deviceContacts
         }.collect {
@@ -105,10 +103,12 @@ class ContactsRepository(private val context: Context) {
             )
 
             cursor?.use {
+                // Group by normalized name to prevent duplicate cards (e.g. Ankool, Ankool...)
                 val contactMap = LinkedHashMap<String, MutableList<String>>()
                 val photoMap = HashMap<String, String?>()
                 val starMap = HashMap<String, Boolean>()
                 val idMap = HashMap<String, Long>()
+                val displayNameMap = HashMap<String, String>()
 
                 val idIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
                 val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
@@ -118,28 +118,31 @@ class ContactsRepository(private val context: Context) {
 
                 while (it.moveToNext()) {
                     val rawName = if (nameIdx >= 0) it.getString(nameIdx) else null
-                    val name = if (!rawName.isNullOrBlank()) rawName else "Unknown"
+                    val name = if (!rawName.isNullOrBlank()) rawName.trim() else "Unknown"
+                    val normKey = name.lowercase()
                     val number = if (numIdx >= 0) it.getString(numIdx)?.trim() ?: "" else ""
                     val photo = if (photoIdx >= 0) it.getString(photoIdx) else null
                     val isStarred = if (starIdx >= 0) it.getInt(starIdx) == 1 else false
                     val contactId = if (idIdx >= 0) it.getLong(idIdx) else 0L
 
                     if (number.isNotBlank()) {
-                        contactMap.getOrPut(name) { mutableListOf() }.add(number)
-                        if (photo != null) photoMap[name] = photo
-                        if (isStarred) starMap[name] = true
-                        idMap[name] = contactId
+                        contactMap.getOrPut(normKey) { mutableListOf() }.add(number)
+                        displayNameMap[normKey] = name
+                        if (photo != null && photoMap[normKey] == null) photoMap[normKey] = photo
+                        if (isStarred) starMap[normKey] = true
+                        if (idMap[normKey] == null) idMap[normKey] = contactId
                     }
                 }
 
-                contactMap.forEach { (name, numbers) ->
+                contactMap.forEach { (normKey, numbers) ->
+                    val displayName = displayNameMap[normKey] ?: normKey
                     result.add(
                         Contact(
-                            id = idMap[name] ?: 0L,
-                            name = name,
+                            id = idMap[normKey] ?: 0L,
+                            name = displayName,
                             numbers = numbers.distinct(),
-                            photoUri = photoMap[name],
-                            isFavorite = starMap[name] ?: false
+                            photoUri = photoMap[normKey],
+                            isFavorite = starMap[normKey] ?: false
                         )
                     )
                 }

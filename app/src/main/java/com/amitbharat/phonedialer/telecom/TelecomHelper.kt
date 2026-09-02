@@ -5,8 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.telecom.PhoneAccountHandle
+import android.os.Bundle
 import android.telecom.TelecomManager
+import com.amitbharat.phonedialer.ui.incall.InCallActivity
 
 object TelecomHelper {
 
@@ -21,18 +22,31 @@ object TelecomHelper {
     }
 
     fun makeCall(context: Context, number: String, simSlot: Int = 0) {
-        val uri = Uri.fromParts("tel", number, null)
-        val intent = Intent(Intent.ACTION_CALL, uri).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
+        val cleanNumber = number.replace("[^0-9+]".toRegex(), "")
+        if (cleanNumber.isBlank()) return
+        val uri = Uri.fromParts("tel", cleanNumber, null)
+        val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+
         try {
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            // Fallback to DIAL intent
-            val dialIntent = Intent(Intent.ACTION_DIAL, uri).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            // Direct TelecomManager placement without system app chooser popup
+            val extras = Bundle().apply {
+                putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, false)
+                putBoolean(TelecomManager.EXTRA_START_CALL_WITH_VIDEO_STATE, false)
             }
-            context.startActivity(dialIntent)
+            telecomManager?.placeCall(uri, extras)
+        } catch (e: SecurityException) {
+            // Fallback to direct ACTION_CALL intent
+            try {
+                val callIntent = Intent(Intent.ACTION_CALL, uri).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(callIntent)
+            } catch (err: Exception) {
+                val dialIntent = Intent(Intent.ACTION_DIAL, uri).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(dialIntent)
+            }
         }
     }
 }
