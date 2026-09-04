@@ -1,10 +1,13 @@
 package com.amitbharat.phonedialer.ui.main
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -22,8 +25,7 @@ import com.amitbharat.phonedialer.utils.ThemeMode
 enum class MainTab {
     DIALER,
     CONTACTS,
-    FAVORITES,
-    SETTINGS
+    FAVORITES
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,35 +46,88 @@ fun MainScreen(
     var currentTab by remember { mutableStateOf(MainTab.DIALER) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showAboutScreen by remember { mutableStateOf(false) }
+    var showSettingsScreen by remember { mutableStateOf(false) }
+    
+    var isSearching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     if (showAboutScreen) {
         com.amitbharat.phonedialer.ui.settings.AboutScreen(
             onBack = { showAboutScreen = false }
         )
+    } else if (showSettingsScreen) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Settings", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = { showSettingsScreen = false }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                )
+            }
+        ) { innerPadding ->
+            Box(modifier = Modifier.padding(innerPadding)) {
+                SettingsScreen(
+                    onThemeChange = onThemeChange,
+                    onOpenAbout = { showAboutScreen = true }
+                )
+            }
+        }
     } else {
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
-                            Text(
-                                text = when (currentTab) {
-                                    MainTab.DIALER -> "Phone Dialer"
-                                    MainTab.CONTACTS -> "Contacts"
-                                    MainTab.FAVORITES -> "Favorites"
-                                    MainTab.SETTINGS -> "Settings"
-                                },
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp
+                        if (isSearching) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Search calls, name or number…", fontSize = 14.sp) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
+                                trailingIcon = {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                        }
+                                    }
+                                }
                             )
-                            Text(
-                                text = "by Amit Bharat",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        } else {
+                            Column {
+                                Text(
+                                    text = when (currentTab) {
+                                        MainTab.DIALER -> "Phone Dialer"
+                                        MainTab.CONTACTS -> "Contacts"
+                                        MainTab.FAVORITES -> "Favorites"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 20.sp
+                                )
+                                Text(
+                                    text = "by Amit Bharat",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     },
                     actions = {
+                        IconButton(onClick = {
+                            isSearching = !isSearching
+                            if (!isSearching) searchQuery = ""
+                        }) {
+                            Icon(
+                                if (isSearching) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Search"
+                            )
+                        }
                         IconButton(onClick = { showOverflowMenu = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More Options")
                         }
@@ -85,7 +140,7 @@ fun MainScreen(
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                                 onClick = {
                                     showOverflowMenu = false
-                                    currentTab = MainTab.SETTINGS
+                                    showSettingsScreen = true
                                 }
                             )
                             DropdownMenuItem(
@@ -123,12 +178,6 @@ fun MainScreen(
                         icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
                         label = { Text("Favorites", fontSize = 12.sp) }
                     )
-                    NavigationBarItem(
-                        selected = currentTab == MainTab.SETTINGS,
-                        onClick = { currentTab = MainTab.SETTINGS },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                        label = { Text("Settings", fontSize = 12.sp) }
-                    )
                 }
             }
         ) { innerPadding ->
@@ -140,7 +189,8 @@ fun MainScreen(
                         callLogs = callLogs,
                         speedDials = speedDials,
                         onCallClick = onCallClick,
-                        onDeleteCallLog = onDeleteCallLog
+                        onDeleteCallLog = onDeleteCallLog,
+                        externalSearchQuery = searchQuery
                     )
                     MainTab.CONTACTS -> ContactsScreen(
                         contacts = contacts,
@@ -153,10 +203,6 @@ fun MainScreen(
                     MainTab.FAVORITES -> FavoritesScreen(
                         favorites = favorites,
                         onCallClick = { num -> onCallClick(num, 0) }
-                    )
-                    MainTab.SETTINGS -> SettingsScreen(
-                        onThemeChange = onThemeChange,
-                        onOpenAbout = { showAboutScreen = true }
                     )
                 }
             }

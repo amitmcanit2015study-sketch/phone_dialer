@@ -9,6 +9,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -62,6 +63,7 @@ data class ConsolidatedCallLog(
     val calls: List<CallLogItem>
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DialerScreen(
     allContacts: List<Contact>,
@@ -70,6 +72,7 @@ fun DialerScreen(
     speedDials: List<SpeedDialItem>,
     onCallClick: (String, Int) -> Unit,
     onDeleteCallLog: (Long) -> Unit,
+    externalSearchQuery: String = "",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -78,14 +81,12 @@ fun DialerScreen(
     var isDialpadOpen by remember { mutableStateOf(false) }
     var selectedFilterIndex by remember { mutableIntStateOf(0) }
     var selectedGroupForDetails by remember { mutableStateOf<ConsolidatedCallLog?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
 
-    // 1. Group consecutive / same number calls into ConsolidatedCallLog
+    // Group calls by contact/number into ConsolidatedCallLog
     val consolidatedLogs = remember(callLogs) {
         val groupedList = mutableListOf<ConsolidatedCallLog>()
         val map = LinkedHashMap<String, MutableList<CallLogItem>>()
 
-        // Normalize key by phone number or name
         for (item in callLogs) {
             val key = item.name?.trim()?.ifBlank { null } ?: item.number.replace("[^0-9+]".toRegex(), "")
             map.getOrPut(key) { mutableListOf() }.add(item)
@@ -120,14 +121,14 @@ fun DialerScreen(
         groupedList
     }
 
-    // Counts for sub-filters (Live & Accurate)
+    // Sub-filters live counts
     val totalCallsCount = consolidatedLogs.size
     val missedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.missedCount > 0 } }
     val receivedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.incomingCount > 0 } }
     val dialedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.outgoingCount > 0 } }
     val recordedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.hasRecording } }
 
-    val filteredList = remember(selectedFilterIndex, consolidatedLogs, searchQuery) {
+    val filteredList = remember(selectedFilterIndex, consolidatedLogs, externalSearchQuery) {
         val base = when (selectedFilterIndex) {
             1 -> consolidatedLogs.filter { it.missedCount > 0 }
             2 -> consolidatedLogs.filter { it.incomingCount > 0 }
@@ -135,15 +136,37 @@ fun DialerScreen(
             4 -> consolidatedLogs.filter { it.hasRecording }
             else -> consolidatedLogs
         }
-        if (searchQuery.isBlank()) base
+        if (externalSearchQuery.isBlank()) base
         else base.filter {
-            (it.name?.contains(searchQuery, ignoreCase = true) == true) || it.number.contains(searchQuery)
+            (it.name?.contains(externalSearchQuery, ignoreCase = true) == true) || it.number.contains(externalSearchQuery)
         }
     }
 
+    // T9 search results from typed number
     val matchedContacts = remember(enteredNumber, allContacts) {
         if (enteredNumber.isEmpty()) emptyList()
-        else T9SearchEngine.search(enteredNumber, allContacts).take(6)
+        else T9SearchEngine.search(enteredNumber, allContacts)
+    }
+
+    // Group filtered call logs day-wise
+    val groupedByDay = remember(filteredList) {
+        val todayMs = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val yesterdayMs = todayMs - 24 * 60 * 60 * 1000L
+
+        filteredList.groupBy { item ->
+            val timestamp = item.latestTimestamp
+            when {
+                timestamp >= todayMs -> "Today"
+                timestamp >= yesterdayMs -> "Yesterday"
+                else -> SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(timestamp))
+            }
+        }
     }
 
     fun handleKeyPress(char: String) {
@@ -172,32 +195,12 @@ fun DialerScreen(
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // 1. Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search name, number or calls") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear")
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(20.dp),
-                singleLine = true
-            )
-
-            // 2. Horizontal Favorites Bar (Deduplicated)
-            if (favorites.isNotEmpty() && searchQuery.isEmpty()) {
+            // 1. Horizontal Favorites Bar (With Count Badge)
+            if (favorites.isNotEmpty() && externalSearchQuery.isEmpty() && enteredNumber.isEmpty()) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp)) {
                     Text(
-                        text = "? FAVORITES ()",
-                        fontSize = 11.sp,
+                        text = "FAVORITES (${favorites.size})",
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
@@ -217,7 +220,7 @@ fun DialerScreen(
                                     }
                                     .padding(4.dp)
                             ) {
-                                ContactAvatar(name = fav.name, photoUri = fav.photoUri, size = 54.dp, fontSize = 20.sp)
+                                ContactAvatar(name = fav.name, photoUri = fav.photoUri, size = 52.dp, fontSize = 20.sp)
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = fav.name.split(" ").firstOrNull() ?: fav.name,
@@ -236,157 +239,210 @@ fun DialerScreen(
                 }
             }
 
-            // 3. Sub-Filter Badges Row with Real Counts
-            ScrollableTabRow(
-                selectedTabIndex = selectedFilterIndex,
-                edgePadding = 12.dp,
-                containerColor = MaterialTheme.colorScheme.background,
-                divider = {}
-            ) {
-                Tab(
-                    selected = selectedFilterIndex == 0,
-                    onClick = { selectedFilterIndex = 0 },
-                    text = { Text("All ()", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
-                Tab(
-                    selected = selectedFilterIndex == 1,
-                    onClick = { selectedFilterIndex = 1 },
-                    text = { Text("Missed ()", color = AccentRed, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
-                Tab(
-                    selected = selectedFilterIndex == 2,
-                    onClick = { selectedFilterIndex = 2 },
-                    text = { Text("Received ()", color = AccentGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
-                Tab(
-                    selected = selectedFilterIndex == 3,
-                    onClick = { selectedFilterIndex = 3 },
-                    text = { Text("Dialed ()", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
-                Tab(
-                    selected = selectedFilterIndex == 4,
-                    onClick = { selectedFilterIndex = 4 },
-                    text = { Text("Recorded ()", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                )
+            // 2. Sub-Filter Tabs Row with Accurate Live Counts
+            if (enteredNumber.isEmpty()) {
+                ScrollableTabRow(
+                    selectedTabIndex = selectedFilterIndex,
+                    edgePadding = 12.dp,
+                    containerColor = MaterialTheme.colorScheme.background,
+                    divider = {}
+                ) {
+                    Tab(
+                        selected = selectedFilterIndex == 0,
+                        onClick = { selectedFilterIndex = 0 },
+                        text = { Text("All ($totalCallsCount)", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    )
+                    Tab(
+                        selected = selectedFilterIndex == 1,
+                        onClick = { selectedFilterIndex = 1 },
+                        text = { Text("Missed ($missedCallsCount)", color = AccentRed, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    )
+                    Tab(
+                        selected = selectedFilterIndex == 2,
+                        onClick = { selectedFilterIndex = 2 },
+                        text = { Text("Received ($receivedCallsCount)", color = AccentGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    )
+                    Tab(
+                        selected = selectedFilterIndex == 3,
+                        onClick = { selectedFilterIndex = 3 },
+                        text = { Text("Dialed ($dialedCallsCount)", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    )
+                    Tab(
+                        selected = selectedFilterIndex == 4,
+                        onClick = { selectedFilterIndex = 4 },
+                        text = { Text("Recorded ($recordedCallsCount)", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    )
+                }
             }
 
-            // 4. Consolidated Call History List
-            if (filteredList.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(54.dp))
-                        Spacer(Modifier.height(8.dp))
-                        Text("No call history in this category", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp, vertical = 2.dp)
-                ) {
-                    items(filteredList, key = { it.primaryId.toString() + it.number }) { group ->
-                        val (icon, tint) = when (group.latestCallType) {
-                            CallType.INCOMING -> Pair(Icons.AutoMirrored.Filled.CallReceived, AccentGreen)
-                            CallType.OUTGOING -> Pair(Icons.AutoMirrored.Filled.CallMade, Color(0xFF3B82F6))
-                            CallType.MISSED -> Pair(Icons.AutoMirrored.Filled.CallMissed, AccentRed)
-                            CallType.REJECTED -> Pair(Icons.Default.CallEnd, AccentRed)
-                            CallType.BLOCKED -> Pair(Icons.Default.Block, Color.Gray)
+            // 3. Main Call History List or T9 Search Matches at Top
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                if (enteredNumber.isNotEmpty()) {
+                    // T9 Search Match Results displayed at top of list
+                    if (matchedContacts.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No contacts match '$enteredNumber'", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
                         }
-
-                        val timeFormatted = remember(group.latestTimestamp) {
-                            val diff = System.currentTimeMillis() - group.latestTimestamp
-                            val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
-                            if (diff < 24 * 60 * 60 * 1000) {
-                                "Today, " + SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(group.latestTimestamp))
-                            } else if (diff < 48 * 60 * 60 * 1000) {
-                                "Yesterday, " + SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(group.latestTimestamp))
-                            } else {
-                                sdf.format(Date(group.latestTimestamp))
-                            }
-                        }
-
-                        // Summary breakdown: e.g. "4 Dialed  3 Received  1 Missed"
-                        val breakdownText = buildString {
-                            val parts = mutableListOf<String>()
-                            if (group.outgoingCount > 0) parts.add(" Dialed")
-                            if (group.incomingCount > 0) parts.add(" Received")
-                            if (group.missedCount > 0) parts.add(" Missed")
-                            append(parts.joinToString("  "))
-                            append("  ")
-                        }
-
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 3.dp)
-                                .clickable { selectedGroupForDetails = group },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            shape = RoundedCornerShape(16.dp),
-                            elevation = CardDefaults.cardElevation(2.dp)
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                ContactAvatar(
-                                    name = group.name ?: group.number,
-                                    photoUri = allContacts.find { it.name == group.name }?.photoUri,
-                                    size = 48.dp,
-                                    fontSize = 18.sp
+                            item {
+                                Text(
+                                    text = "SEARCH RESULTS (${matchedContacts.size})",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(vertical = 4.dp)
                                 )
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = group.name ?: group.number,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = if (group.missedCount > 0 && group.latestCallType == CallType.MISSED) AccentRed else MaterialTheme.colorScheme.onSurface
-                                        )
-                                        if (group.totalCount > 1) {
-                                            Spacer(Modifier.width(6.dp))
-                                            Surface(
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = MaterialTheme.colorScheme.surfaceVariant
-                                            ) {
-                                                Text(
-                                                    text = "()",
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                                    color = MaterialTheme.colorScheme.primary
-                                                )
-                                            }
+                            }
+                            items(matchedContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
+                                Card(
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onCallClick(contact.numbers.firstOrNull() ?: enteredNumber, 0)
                                         }
-                                    }
-                                    Spacer(Modifier.height(2.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(
-                                            text = breakdownText,
-                                            fontSize = 12.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        if (group.hasRecording) {
-                                            Spacer(Modifier.width(4.dp))
-                                            Text("???", fontSize = 12.sp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        ContactAvatar(name = contact.name, photoUri = contact.photoUri, size = 44.dp, fontSize = 16.sp)
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                                            Text(contact.numbers.firstOrNull() ?: "", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        IconButton(
+                                            onClick = { onCallClick(contact.numbers.firstOrNull() ?: enteredNumber, 0) },
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .background(AccentGreen.copy(alpha = 0.15f), CircleShape)
+                                        ) {
+                                            Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 }
-                                IconButton(
-                                    onClick = { onCallClick(group.number, 0) },
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .background(AccentGreen.copy(alpha = 0.15f), CircleShape)
+                            }
+                        }
+                    }
+                } else if (filteredList.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(54.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No call history in this category", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                } else {
+                    // Day-wise Grouped Call History List
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 2.dp)
+                    ) {
+                        groupedByDay.forEach { (dayHeader, logsInDay) ->
+                            item(key = "header_$dayHeader") {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.background,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
+                                    Text(
+                                        text = "$dayHeader (${logsInDay.size})",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            items(logsInDay, key = { it.primaryId.toString() + "_" + it.number + "_" + it.latestTimestamp }) { group ->
+                                val (icon, tint) = when (group.latestCallType) {
+                                    CallType.INCOMING -> Pair(Icons.AutoMirrored.Filled.CallReceived, AccentGreen)
+                                    CallType.OUTGOING -> Pair(Icons.AutoMirrored.Filled.CallMade, Color(0xFF3B82F6))
+                                    CallType.MISSED -> Pair(Icons.AutoMirrored.Filled.CallMissed, AccentRed)
+                                    CallType.REJECTED -> Pair(Icons.Default.CallEnd, AccentRed)
+                                    CallType.BLOCKED -> Pair(Icons.Default.Block, Color.Gray)
+                                }
+
+                                val breakdownText = buildString {
+                                    val parts = mutableListOf<String>()
+                                    if (group.outgoingCount > 0) parts.add("${group.outgoingCount} Dialed")
+                                    if (group.incomingCount > 0) parts.add("${group.incomingCount} Received")
+                                    if (group.missedCount > 0) parts.add("${group.missedCount} Missed")
+                                    append(parts.joinToString(" • "))
+                                }
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                        .clickable { selectedGroupForDetails = group },
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    shape = RoundedCornerShape(16.dp),
+                                    elevation = CardDefaults.cardElevation(2.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        ContactAvatar(
+                                            name = group.name ?: group.number,
+                                            photoUri = allContacts.find { it.name == group.name }?.photoUri,
+                                            size = 48.dp,
+                                            fontSize = 18.sp
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = group.name ?: group.number,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 16.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = if (group.missedCount > 0 && group.latestCallType == CallType.MISSED) AccentRed else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (group.totalCount > 1) {
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                                    ) {
+                                                        Text(
+                                                            text = "(${group.totalCount})",
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                                            color = MaterialTheme.colorScheme.primary
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Spacer(Modifier.height(2.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text(
+                                                    text = breakdownText,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { onCallClick(group.number, 0) },
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .background(AccentGreen.copy(alpha = 0.15f), CircleShape)
+                                        ) {
+                                            Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -395,7 +451,7 @@ fun DialerScreen(
             }
         }
 
-        // 5. Floating Open Keypad Button (FAB)
+        // 4. Floating Open Keypad Button (FAB)
         if (!isDialpadOpen) {
             FloatingActionButton(
                 onClick = { isDialpadOpen = true },
@@ -412,7 +468,7 @@ fun DialerScreen(
             }
         }
 
-        // 6. Slide-Up Ultra-Modern Glass Keypad Overlay
+        // 5. Slide-Up Keypad Sheet
         AnimatedVisibility(
             visible = isDialpadOpen,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -431,7 +487,7 @@ fun DialerScreen(
                         .padding(horizontal = 18.dp, vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Header Bar with Drag Handle & Close
+                    // Header Bar
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -445,38 +501,6 @@ fun DialerScreen(
                         )
                         IconButton(onClick = { isDialpadOpen = false }) {
                             Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close Keypad", modifier = Modifier.size(30.dp))
-                        }
-                    }
-
-                    // T9 Search Match Chips
-                    if (matchedContacts.isNotEmpty()) {
-                        LazyRow(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(matchedContacts) { contact ->
-                                Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                                    modifier = Modifier.clickable {
-                                        onCallClick(contact.numbers.firstOrNull() ?: enteredNumber, 0)
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        ContactAvatar(name = contact.name, photoUri = contact.photoUri, size = 30.dp, fontSize = 13.sp)
-                                        Spacer(Modifier.width(8.dp))
-                                        Column {
-                                            Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                            Text(contact.numbers.firstOrNull() ?: "", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
 
@@ -560,12 +584,12 @@ fun DialerScreen(
         }
     }
 
-    // Consolidated Call Details Dialog (Shows all historical calls for this contact)
+    // Consolidated Call Details Dialog
     selectedGroupForDetails?.let { group ->
         val fullDate = SimpleDateFormat("EEEE, dd MMMM yyyy, hh:mm:ss a", Locale.getDefault()).format(Date(group.latestTimestamp))
         val totalMins = group.totalDuration / 60
         val totalSecs = group.totalDuration % 60
-        val totalDurText = if (totalMins > 0) "m s" else "s"
+        val totalDurText = if (totalMins > 0) "${totalMins}m ${totalSecs}s" else "${totalSecs}s"
 
         AlertDialog(
             onDismissRequest = { selectedGroupForDetails = null },
@@ -581,17 +605,13 @@ fun DialerScreen(
             },
             text = {
                 Column(modifier = Modifier.padding(top = 8.dp)) {
-                    Text("Total Calls: ", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Total Calls: ${group.totalCount}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text("Breakdown:  Dialed   Received   Missed", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Breakdown: ${group.outgoingCount} Dialed • ${group.incomingCount} Received • ${group.missedCount} Missed", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(4.dp))
-                    Text("Latest Call: ", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Latest Call: $fullDate", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(4.dp))
-                    Text("Total Duration: ", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (group.hasRecording) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("Recording: Available ???", fontSize = 13.sp, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
-                    }
+                    Text("Total Duration: $totalDurText", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
             confirmButton = {
@@ -612,13 +632,13 @@ fun DialerScreen(
                     OutlinedButton(onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Phone Number", group.number))
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                     }) {
                         Text("Copy")
                     }
                     Spacer(Modifier.width(6.dp))
                     OutlinedButton(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("sms:")))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("sms:${group.number}")))
                         selectedGroupForDetails = null
                     }) {
                         Text("SMS")
@@ -628,6 +648,7 @@ fun DialerScreen(
         )
     }
 }
+
 @Composable
 fun DialKeyModern(
     digit: String,

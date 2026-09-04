@@ -11,8 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,7 +36,11 @@ fun SettingsScreen(
     var isAutoRecordAll by remember { mutableStateOf(prefs.isAutoCallRecordingEnabled()) }
     var isVibration by remember { mutableStateOf(prefs.isVibrationEnabled()) }
     var isSound by remember { mutableStateOf(prefs.isDialpadSoundEnabled()) }
-    var currentTheme by remember { mutableStateOf(prefs.getThemeMode()) }
+    
+    var blockUnknown by remember { mutableStateOf(false) }
+    var blockSpam by remember { mutableStateOf(true) }
+    var selectedSimOption by remember { mutableIntStateOf(0) } // 0: Ask, 1: SIM 1, 2: SIM 2
+    var autoFormatNumbers by remember { mutableStateOf(true) }
 
     fun requestDefaultDialer() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -66,7 +69,7 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // 1. Default Dialer Card
         item {
@@ -96,11 +99,83 @@ fun SettingsScreen(
             }
         }
 
-        // 2. Call Recording Controls
+        // 2. Call Blocking & Blacklist
         item {
             Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("🎙️ Call Recording", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Block, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Call Blocking & Spam Filter", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Block Unknown Callers", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("Reject calls from numbers not saved in contacts", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = blockUnknown, onCheckedChange = { blockUnknown = it })
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Filter Suspected Spam Calls", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("Automatically mute or disconnect suspected telemarketers", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = blockSpam, onCheckedChange = { blockSpam = it })
+                    }
+                }
+            }
+        }
+
+        // 3. Preferred Calling SIM Card
+        item {
+            Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SimCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Preferred Calling SIM", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    listOf("Always Ask Before Calling", "Use SIM 1 (Primary)", "Use SIM 2 (Secondary)").forEachIndexed { idx, label ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedSimOption = idx }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = selectedSimOption == idx, onClick = { selectedSimOption = idx })
+                            Spacer(Modifier.width(8.dp))
+                            Text(label, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Call Recording Controls
+        item {
+            Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Call Recording Options", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
                     Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier
@@ -110,7 +185,7 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Record All Calls Automatically", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text("Record All Calls Automatically", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             Text("Automatically record every incoming and outgoing call", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
@@ -126,20 +201,24 @@ fun SettingsScreen(
             }
         }
 
-        // 3. Sound & Vibration Feedback
+        // 5. Sound & Haptics Feedback
         item {
             Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("🔔 Sound & Haptics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Sound & Haptics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
                     Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 6.dp),
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Keypad Vibration Feedback", fontSize = 15.sp)
+                        Text("Keypad Vibration Feedback", fontSize = 14.sp)
                         Switch(checked = isVibration, onCheckedChange = {
                             isVibration = it
                             prefs.setVibrationEnabled(it)
@@ -149,11 +228,11 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 6.dp),
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Keypad Audio Tones", fontSize = 15.sp)
+                        Text("Keypad Audio Tones", fontSize = 14.sp)
                         Switch(checked = isSound, onCheckedChange = {
                             isSound = it
                             prefs.setDialpadSoundEnabled(it)
@@ -163,63 +242,29 @@ fun SettingsScreen(
             }
         }
 
-        // 4. Themes & Display
+        // 6. Number Formatting & Quick Response
         item {
             Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("🎨 Appearance & Themes", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(Modifier.height(10.dp))
-                    listOf(
-                        ThemeMode.SYSTEM to "System Default",
-                        ThemeMode.LIGHT to "Light Mode",
-                        ThemeMode.DARK to "Dark Mode",
-                        ThemeMode.AMOLED to "AMOLED Pure Black"
-                    ).forEach { (mode, label) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    currentTheme = mode
-                                    prefs.setThemeMode(mode)
-                                    onThemeChange(mode)
-                                }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = currentTheme == mode, onClick = {
-                                currentTheme = mode
-                                prefs.setThemeMode(mode)
-                                onThemeChange(mode)
-                            })
-                            Spacer(Modifier.width(8.dp))
-                            Text(label, fontSize = 15.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Sms, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Number Format & Responses", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-format Phone Numbers", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("Format numbers as (XXX) XXX-XXXX", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        Switch(checked = autoFormatNumbers, onCheckedChange = { autoFormatNumbers = it })
                     }
-                }
-            }
-        }
-
-        // 5. About & Developer Info
-        item {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenAbout?.invoke() }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.action_about), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                        Text("Developer: Amit Bharat   v1.0.1", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.Default.ChevronRight, contentDescription = null)
                 }
             }
         }

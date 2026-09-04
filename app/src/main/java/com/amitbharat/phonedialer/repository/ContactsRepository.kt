@@ -22,26 +22,40 @@ class ContactsRepository(private val context: Context) {
     private val gson = Gson()
     private val type = object : TypeToken<List<String>>() {}.type
 
+    private fun deduplicateContacts(contacts: List<Contact>): List<Contact> {
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<Contact>()
+        for (c in contacts) {
+            val normName = c.name.trim().lowercase()
+            val primaryNum = c.numbers.firstOrNull()?.replace(Regex("[^0-9+]"), "") ?: ""
+            val key = if (normName.isNotBlank() && normName != "unknown") normName else primaryNum
+            if (key.isNotBlank() && seen.add(key)) {
+                result.add(c.copy(numbers = c.numbers.distinct()))
+            }
+        }
+        return result
+    }
+
     fun getAllContacts(): Flow<List<Contact>> = flow {
-        val deviceContacts = fetchDeviceContactsDirectly()
+        val deviceContacts = deduplicateContacts(fetchDeviceContactsDirectly())
         emit(deviceContacts)
 
         contactDao.getAllContacts().map { list ->
-            if (list.isNotEmpty()) list.map { it.toModel(gson, type) } else deviceContacts
+            if (list.isNotEmpty()) deduplicateContacts(list.map { it.toModel(gson, type) }) else deviceContacts
         }.collect {
-            emit(it)
+            emit(deduplicateContacts(it))
         }
     }.flowOn(Dispatchers.IO)
 
     fun getFavoriteContacts(): Flow<List<Contact>> = flow {
-        val deviceContacts = fetchDeviceContactsDirectly()
+        val deviceContacts = deduplicateContacts(fetchDeviceContactsDirectly())
         val favorites = deviceContacts.filter { it.isFavorite }
         emit(favorites)
 
         contactDao.getFavoriteContacts().map { list ->
-            if (list.isNotEmpty()) list.map { it.toModel(gson, type) } else favorites
+            if (list.isNotEmpty()) deduplicateContacts(list.map { it.toModel(gson, type) }) else favorites
         }.collect {
-            emit(it)
+            emit(deduplicateContacts(it))
         }
     }.flowOn(Dispatchers.IO)
 
@@ -154,6 +168,7 @@ class ContactsRepository(private val context: Context) {
     }
 
     suspend fun syncDeviceContacts() = withContext(Dispatchers.IO) {
+        contactDao.deleteAllContacts()
         val contacts = fetchDeviceContactsDirectly()
         contacts.forEach { c ->
             val entity = ContactEntity(
