@@ -59,9 +59,15 @@ fun ContactDetailsScreen(
     val filteredLogs = remember(number, callLogs) {
         val cleanNum = number.replace("[^0-9+]".toRegex(), "")
         callLogs.filter {
-            it.number.replace("[^0-9+]".toRegex(), "") == cleanNum ||
+            val c = it.number.replace("[^0-9+]".toRegex(), "")
+            c == cleanNum || (cleanNum.length >= 10 && c.endsWith(cleanNum.takeLast(10))) ||
             (it.name != null && it.name.equals(name, ignoreCase = true))
-        }.sortedByDescending { it.timestamp }
+        }
+        .distinctBy { item ->
+            val c = item.number.replace("[^0-9+]".toRegex(), "")
+            "${c}_${item.timestamp}_${item.callType}_${item.duration}"
+        }
+        .sortedByDescending { it.timestamp }
     }
 
     val totalDuration = remember(filteredLogs) { filteredLogs.sumOf { it.duration } }

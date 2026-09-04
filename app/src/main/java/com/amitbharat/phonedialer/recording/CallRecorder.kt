@@ -3,7 +3,6 @@ package com.amitbharat.phonedialer.recording
 import android.content.Context
 import android.media.MediaRecorder
 import android.os.Build
-import android.os.Environment
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -21,7 +20,7 @@ class CallRecorder(private val context: Context) {
         try {
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val cleanNum = number.replace("[^0-9+]".toRegex(), "")
-            val fileName = "CALL__.aac"
+            val fileName = "REC_${cleanNum}_${timeStamp}.m4a"
 
             val recordDir = File(context.getExternalFilesDir(null), "Recordings").apply { mkdirs() }
             val file = File(recordDir, fileName)
@@ -45,6 +44,7 @@ class CallRecorder(private val context: Context) {
             isRecording = true
             return true
         } catch (e: Exception) {
+            e.printStackTrace()
             isRecording = false
             currentFilePath = null
             return false
@@ -57,7 +57,9 @@ class CallRecorder(private val context: Context) {
         try {
             mediaRecorder?.stop()
             mediaRecorder?.release()
-        } catch (ignored: Exception) {}
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
         mediaRecorder = null
         isRecording = false
         return path

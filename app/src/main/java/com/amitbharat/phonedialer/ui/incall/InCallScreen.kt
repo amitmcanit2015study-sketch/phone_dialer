@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -31,7 +33,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
+import com.amitbharat.phonedialer.model.CallLogItem
+import com.amitbharat.phonedialer.model.CallType
 import com.amitbharat.phonedialer.recording.CallRecorder
+import com.amitbharat.phonedialer.repository.CallLogRepository
 import com.amitbharat.phonedialer.telecom.ActiveCallState
 import com.amitbharat.phonedialer.telecom.CallManager
 import com.amitbharat.phonedialer.ui.theme.AccentGreen
@@ -39,6 +45,8 @@ import com.amitbharat.phonedialer.ui.theme.AccentRed
 import com.amitbharat.phonedialer.ui.theme.PhoneDialerTheme
 import com.amitbharat.phonedialer.utils.ContactAvatar
 import com.amitbharat.phonedialer.utils.PreferencesManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class InCallActivity : ComponentActivity() {
 
@@ -57,6 +65,7 @@ class InCallActivity : ComponentActivity() {
 
         callRecorder = CallRecorder(this)
         val prefs = PreferencesManager.getInstance(this)
+        val callLogRepo = CallLogRepository(this)
 
         setContent {
             val callState by CallManager.callState.collectAsState()
@@ -64,7 +73,21 @@ class InCallActivity : ComponentActivity() {
             LaunchedEffect(callState.hasCall, callState.callState) {
                 if (!callState.hasCall || callState.callState == Call.STATE_DISCONNECTED) {
                     if (callRecorder.isRecording) {
-                        callRecorder.stopRecording()
+                        val path = callRecorder.stopRecording()
+                        if (path != null) {
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                callLogRepo.addCallLog(
+                                    CallLogItem(
+                                        number = callState.number,
+                                        name = callState.callerName,
+                                        callType = if (callState.callState == Call.STATE_DISCONNECTED) CallType.INCOMING else CallType.OUTGOING,
+                                        timestamp = System.currentTimeMillis(),
+                                        duration = callState.callDurationSeconds,
+                                        recordingPath = path
+                                    )
+                                )
+                            }
+                        }
                     }
                     finish()
                 } else if (callState.callState == Call.STATE_ACTIVE && prefs.isAutoCallRecordingEnabled() && !callRecorder.isRecording) {
@@ -78,14 +101,47 @@ class InCallActivity : ComponentActivity() {
                     state = callState,
                     onAnswer = { CallManager.answerCall() },
                     onReject = { CallManager.rejectCall() },
-                    onEndCall = { CallManager.disconnectCall() },
+                    onEndCall = {
+                        if (callRecorder.isRecording) {
+                            val path = callRecorder.stopRecording()
+                            if (path != null) {
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    callLogRepo.addCallLog(
+                                        CallLogItem(
+                                            number = callState.number,
+                                            name = callState.callerName,
+                                            callType = CallType.OUTGOING,
+                                            timestamp = System.currentTimeMillis(),
+                                            duration = callState.callDurationSeconds,
+                                            recordingPath = path
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        CallManager.disconnectCall()
+                    },
                     onMuteToggle = { CallManager.setMuted(!callState.isMuted) },
                     onSpeakerToggle = { CallManager.setSpeakerphoneOn(!callState.isSpeakerOn) },
                     onHoldToggle = { CallManager.toggleHold() },
                     onRecordToggle = {
                         if (callRecorder.isRecording) {
-                            callRecorder.stopRecording()
+                            val path = callRecorder.stopRecording()
                             CallManager.toggleRecording(false)
+                            if (path != null) {
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    callLogRepo.addCallLog(
+                                        CallLogItem(
+                                            number = callState.number,
+                                            name = callState.callerName,
+                                            callType = CallType.OUTGOING,
+                                            timestamp = System.currentTimeMillis(),
+                                            duration = callState.callDurationSeconds,
+                                            recordingPath = path
+                                        )
+                                    )
+                                }
+                            }
                         } else {
                             val ok = callRecorder.startRecording(callState.number)
                             if (ok) CallManager.toggleRecording(true)
@@ -134,6 +190,17 @@ fun InCallScreen(
     var isQuickSmsOpen by remember { mutableStateOf(false) }
     var customSmsText by remember { mutableStateOf("") }
 
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+
     val durationText = remember(state.callDurationSeconds) {
         val mins = state.callDurationSeconds / 60
         val secs = state.callDurationSeconds % 60
@@ -141,7 +208,7 @@ fun InCallScreen(
     }
 
     val stateText = when (state.callState) {
-        Call.STATE_RINGING -> "Incoming Call…"
+        Call.STATE_RINGING -> "INCOMING CALL…"
         Call.STATE_DIALING, Call.STATE_CONNECTING -> "Calling…"
         Call.STATE_ACTIVE -> durationText
         Call.STATE_HOLDING -> "On Hold"
@@ -157,14 +224,13 @@ fun InCallScreen(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF0F172A),
-                        Color(0xFF090D16),
-                        Color(0xFF030508)
+                        Color(0xFF0B132B),
+                        Color(0xFF1C2541),
+                        Color(0xFF0B132B)
                     )
                 )
             )
     ) {
-        // Main Caller Content Layer
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -173,131 +239,157 @@ fun InCallScreen(
         ) {
             Spacer(Modifier.height(32.dp))
 
-            // SIM Badge
+            // SIM / Carrier Status Badge
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 color = Color(0xFF1E293B).copy(alpha = 0.85f),
                 modifier = Modifier.padding(bottom = 16.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Default.SignalCellularAlt, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Jio 5G • HD Voice",
-                        fontSize = 12.sp,
+                        text = "Jio 5G • HD Voice Call",
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White.copy(alpha = 0.9f)
                     )
                 }
             }
 
-            // Caller Name & Details
+            // Caller Name & Phone Number
             Text(
                 text = displayName,
-                fontSize = 30.sp,
+                fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 textAlign = TextAlign.Center,
                 maxLines = 2
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = state.number,
-                fontSize = 16.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Medium,
                 color = Color.White.copy(alpha = 0.8f)
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stateText,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (state.callState == Call.STATE_ACTIVE) AccentGreen else Color(0xFF38BDF8)
-            )
+            Spacer(Modifier.height(10.dp))
 
-            // Live Call Recording Indicator
+            // Animated Status Pill
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = if (isIncomingRinging) AccentGreen.copy(alpha = 0.25f) else Color(0xFF38BDF8).copy(alpha = 0.25f)
+            ) {
+                Text(
+                    text = stateText,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isIncomingRinging) AccentGreen else Color(0xFF38BDF8),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+                )
+            }
+
+            // Recording Indicator
             if (state.isRecording) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(AccentRed.copy(alpha = 0.3f))
-                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                        .background(AccentRed.copy(alpha = 0.35f))
+                        .padding(horizontal = 14.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Default.FiberManualRecord, contentDescription = null, tint = AccentRed, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Recording Call", color = AccentRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Recording Call…", color = AccentRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(32.dp))
 
-            // Contact Photo / Large Initials Hero Avatar
-            ContactAvatar(
-                name = displayName,
-                photoUri = state.photoUri,
-                size = 150.dp,
-                fontSize = 54.sp
-            )
+            // Animated Pulsing Contact Avatar Hero (Item 12)
+            Box(contentAlignment = Alignment.Center) {
+                if (isIncomingRinging) {
+                    Box(
+                        modifier = Modifier
+                            .scale(pulseScale)
+                            .size(170.dp)
+                            .clip(CircleShape)
+                            .background(AccentGreen.copy(alpha = 0.25f))
+                    )
+                }
+                ContactAvatar(
+                    name = displayName,
+                    photoUri = state.photoUri,
+                    size = 150.dp,
+                    fontSize = 54.sp
+                )
+            }
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Action Control Panel
+            // Action Control Panel (Item 12: Incoming Call Screen UI)
             if (isIncomingRinging) {
-                // Incoming Call: Quick Response SMS + Accept / Decline
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Quick Message Trigger
+                    // Quick Message Pill
                     OutlinedButton(
                         onClick = { isQuickSmsOpen = true },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.padding(bottom = 24.dp)
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.padding(bottom = 28.dp)
                     ) {
                         Icon(Icons.Default.Message, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Quick SMS Response")
+                        Text("Quick SMS Response", fontWeight = FontWeight.SemiBold)
                     }
 
+                    // Large Answer / Decline Buttons with Glow
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Decline Button (Crimson Red)
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             IconButton(
                                 onClick = onReject,
-                                modifier = Modifier.size(76.dp).background(AccentRed, CircleShape)
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .background(AccentRed, CircleShape)
                             ) {
-                                Icon(Icons.Default.CallEnd, contentDescription = "Decline", tint = Color.White, modifier = Modifier.size(38.dp))
+                                Icon(Icons.Default.CallEnd, contentDescription = "Decline", tint = Color.White, modifier = Modifier.size(40.dp))
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Text("Decline", color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(10.dp))
+                            Text("Decline", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         }
 
+                        // Answer Button (Emerald Green with Pulse)
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             IconButton(
                                 onClick = onAnswer,
-                                modifier = Modifier.size(76.dp).background(AccentGreen, CircleShape)
+                                modifier = Modifier
+                                    .scale(pulseScale)
+                                    .size(80.dp)
+                                    .background(AccentGreen, CircleShape)
                             ) {
-                                Icon(Icons.Default.Call, contentDescription = "Answer", tint = Color.White, modifier = Modifier.size(38.dp))
+                                Icon(Icons.Default.Call, contentDescription = "Answer", tint = Color.White, modifier = Modifier.size(40.dp))
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Text("Answer", color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(10.dp))
+                            Text("Answer", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             } else {
-                // Active / Outgoing In-Call Grid
+                // Active / Outgoing Call Controls
                 Card(
                     shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.92f)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.95f)),
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                 ) {
                     Column(
@@ -373,7 +465,7 @@ fun InCallScreen(
             }
         }
 
-        // Quick Response Sheet Overlay
+        // Quick Response Overlay
         AnimatedVisibility(
             visible = isQuickSmsOpen,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),

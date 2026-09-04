@@ -60,52 +60,24 @@ fun ContactsScreen(
             }
         )
     } else {
-        Scaffold(
-            modifier = modifier.fillMaxSize(),
-            floatingActionButton = {
-                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                    // Floating Search FAB at Bottom Left
-                    FloatingActionButton(
-                        onClick = { isSearchOpen = !isSearchOpen },
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        shape = CircleShape,
-                        modifier = Modifier.align(Alignment.BottomStart).size(52.dp).shadow(6.dp, CircleShape)
-                    ) {
-                        Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
-                    }
-
-                    // Add Contact FAB at Bottom Right
-                    FloatingActionButton(
-                        onClick = { showAddScreen = true },
-                        containerColor = AccentGreen,
-                        contentColor = Color.White,
-                        shape = CircleShape,
-                        modifier = Modifier.align(Alignment.BottomEnd).size(64.dp).shadow(12.dp, CircleShape)
-                    ) {
-                        Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact", modifier = Modifier.size(30.dp))
-                    }
-                }
-            }
-        ) { innerPadding ->
+        Box(modifier = modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
                     .padding(horizontal = 12.dp, vertical = 2.dp)
             ) {
-                // Header with Count
+                // Header Row (Clean, no extra vertical padding)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         text = "Contacts (${contacts.size})",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         color = MaterialTheme.colorScheme.primary
                     )
                     IconButton(onClick = onSyncDeviceContacts) {
@@ -113,26 +85,7 @@ fun ContactsScreen(
                     }
                 }
 
-                // Expandable Search Field
-                AnimatedVisibility(visible = isSearchOpen) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search contacts…") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        singleLine = true
-                    )
-                }
-
+                // Contacts List
                 if (filteredContacts.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -144,7 +97,10 @@ fun ContactsScreen(
                         }
                     }
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 80.dp)
+                    ) {
                         items(filteredContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
                             ContactItemRow(
                                 contact = contact,
@@ -154,6 +110,70 @@ fun ContactsScreen(
                             )
                         }
                     }
+                }
+            }
+
+            // Expandable Bottom Search Bar (Item 6: Open search box on the bottom)
+            AnimatedVisibility(
+                visible = isSearchOpen,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 76.dp)
+            ) {
+                Surface(
+                    shadowElevation = 8.dp,
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search contacts…") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        singleLine = true
+                    )
+                }
+            }
+
+            // Dual Floating Action Buttons: Search FAB + Contact Add FAB on Bottom Right
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Floating Search FAB
+                FloatingActionButton(
+                    onClick = { isSearchOpen = !isSearchOpen },
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape,
+                    modifier = Modifier.size(52.dp).shadow(6.dp, CircleShape)
+                ) {
+                    Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
+                }
+
+                // Add Contact FAB
+                FloatingActionButton(
+                    onClick = { showAddScreen = true },
+                    containerColor = AccentGreen,
+                    contentColor = Color.White,
+                    shape = CircleShape,
+                    modifier = Modifier.size(64.dp).shadow(12.dp, CircleShape)
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact", modifier = Modifier.size(30.dp))
                 }
             }
         }

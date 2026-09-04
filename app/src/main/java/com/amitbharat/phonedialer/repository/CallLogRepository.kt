@@ -3,6 +3,7 @@ package com.amitbharat.phonedialer.repository
 import android.content.ContentResolver
 import android.content.Context
 import android.provider.CallLog
+import android.provider.ContactsContract
 import com.amitbharat.phonedialer.database.AppDatabase
 import com.amitbharat.phonedialer.database.entity.CallLogEntity
 import com.amitbharat.phonedialer.database.entity.SpeedDialEntity
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class CallLogRepository(private val context: Context) {
 
@@ -22,20 +24,27 @@ class CallLogRepository(private val context: Context) {
     private val callLogDao = db.callLogDao()
     private val speedDialDao = db.speedDialDao()
 
-    fun getAllCallLogs(): Flow<List<CallLogItem>> = flow {
-        // 1. Emit live call logs directly from device CallLog.Calls
-        val deviceLogs = fetchDeviceCallLogsDirectly()
-        emit(deviceLogs)
+    private fun deduplicateLogs(logs: List<CallLogItem>): List<CallLogItem> {
+        return logs.distinctBy { item ->
+            val cleanNum = item.number.replace(Regex("[^0-9+]"), "")
+            "${cleanNum}_${item.timestamp}_${item.callType.name}_${item.duration}"
+        }.sortedByDescending { it.timestamp }
+    }
 
-        // 2. Also observe database updates
+    fun getAllCallLogs(): Flow<List<CallLogItem>> = flow {
+        // Fast direct fetch from device call log & Room DB
+        val deviceLogs = fetchDeviceCallLogsDirectly()
+        emit(deduplicateLogs(deviceLogs))
+
         callLogDao.getAllCallLogs().map { list ->
-            if (list.isNotEmpty()) list.map { it.toModel() } else deviceLogs
+            val dbModels = list.map { it.toModel() }
+            deduplicateLogs(deviceLogs + dbModels)
         }.collect {
             emit(it)
         }
     }.flowOn(Dispatchers.IO)
 
-    suspend fun addCallLog(item: CallLogItem): Long {
+    suspend fun addCallLog(item: CallLogItem): Long = withContext(Dispatchers.IO) {
         val entity = CallLogEntity(
             number = item.number,
             name = item.name,
@@ -46,20 +55,26 @@ class CallLogRepository(private val context: Context) {
             recordingPath = item.recordingPath,
             notes = item.notes
         )
-        return callLogDao.insertCallLog(entity)
+        callLogDao.insertCallLog(entity)
     }
 
-    suspend fun deleteCallLog(id: Long) {
+    suspend fun deleteCallLog(id: Long) = withContext(Dispatchers.IO) {
         callLogDao.deleteCallLog(id)
     }
 
-    suspend fun clearCallLogs() {
+    suspend fun clearCallLogs() = withContext(Dispatchers.IO) {
         callLogDao.clearCallLogs()
     }
 
     fun fetchDeviceCallLogsDirectly(): List<CallLogItem> {
         val result = mutableListOf<CallLogItem>()
         try {
+            // Build saved contact number set for fast lookup
+            val savedNumbers = getSavedContactNumbersSet()
+
+            // Map available recordings from recordings folder
+            val recordingsMap = getRecordingsMap()
+
             val resolver: ContentResolver = context.contentResolver
             val cursor = resolver.query(
                 CallLog.Calls.CONTENT_URI,
@@ -73,7 +88,7 @@ class CallLogRepository(private val context: Context) {
                 ),
                 null,
                 null,
-                CallLog.Calls.DATE + " DESC LIMIT 500"
+                CallLog.Calls.DATE + " DESC LIMIT 400"
             )
 
             cursor?.use {
@@ -102,6 +117,10 @@ class CallLogRepository(private val context: Context) {
                     }
 
                     if (number.isNotBlank()) {
+                        val cleanNum = number.replace(Regex("[^0-9+]"), "")
+                        val isSaved = savedNumbers.contains(cleanNum) || (cleanNum.length >= 10 && savedNumbers.any { s -> s.endsWith(cleanNum.takeLast(10)) })
+                        val recordingPath = recordingsMap[cleanNum]
+
                         result.add(
                             CallLogItem(
                                 id = id,
@@ -110,7 +129,9 @@ class CallLogRepository(private val context: Context) {
                                 callType = callType,
                                 timestamp = date,
                                 duration = duration,
-                                simSlot = 0
+                                simSlot = 0,
+                                recordingPath = recordingPath,
+                                isSavedContact = isSaved
                             )
                         )
                     }
@@ -122,19 +143,57 @@ class CallLogRepository(private val context: Context) {
         return result
     }
 
-    suspend fun syncDeviceCallLogs() = withContext(Dispatchers.IO) {
-        val list = fetchDeviceCallLogsDirectly()
-        list.forEach { item ->
-            val entity = CallLogEntity(
-                number = item.number,
-                name = item.name,
-                callType = item.callType.name,
-                timestamp = item.timestamp,
-                duration = item.duration,
-                simSlot = item.simSlot
+    private fun getSavedContactNumbersSet(): Set<String> {
+        val set = mutableSetOf<String>()
+        try {
+            val resolver = context.contentResolver
+            val cursor = resolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null,
+                null,
+                null
             )
-            callLogDao.insertCallLog(entity)
+            cursor?.use {
+                val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                while (it.moveToNext()) {
+                    val raw = if (numIdx >= 0) it.getString(numIdx) ?: "" else ""
+                    val clean = raw.replace(Regex("[^0-9+]"), "")
+                    if (clean.isNotBlank()) {
+                        set.add(clean)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
+        return set
+    }
+
+    private fun getRecordingsMap(): Map<String, String> {
+        val map = HashMap<String, String>()
+        try {
+            val recordDir = File(context.getExternalFilesDir(null), "Recordings")
+            if (recordDir.exists() && recordDir.isDirectory) {
+                recordDir.listFiles()?.forEach { file ->
+                    val name = file.name
+                    if (name.startsWith("REC_") && (name.endsWith(".m4a") || name.endsWith(".aac"))) {
+                        val parts = name.split("_")
+                        if (parts.size >= 2) {
+                            val cleanNum = parts[1]
+                            map[cleanNum] = file.absolutePath
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return map
+    }
+
+    suspend fun syncDeviceCallLogs() = withContext(Dispatchers.IO) {
+        callLogDao.clearUnrecordedCallLogs()
     }
 
     // Speed Dial
@@ -144,13 +203,13 @@ class CallLogRepository(private val context: Context) {
         }
     }
 
-    suspend fun setSpeedDial(item: SpeedDialItem) {
+    suspend fun setSpeedDial(item: SpeedDialItem) = withContext(Dispatchers.IO) {
         speedDialDao.setSpeedDial(
             SpeedDialEntity(digit = item.digit, name = item.name, number = item.number, photoUri = item.photoUri)
         )
     }
 
-    suspend fun deleteSpeedDial(digit: Int) {
+    suspend fun deleteSpeedDial(digit: Int) = withContext(Dispatchers.IO) {
         speedDialDao.deleteSpeedDial(digit)
     }
 

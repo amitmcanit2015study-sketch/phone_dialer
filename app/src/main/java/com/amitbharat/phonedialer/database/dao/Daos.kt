@@ -48,6 +48,9 @@ interface CallLogDao {
     @Query("DELETE FROM call_logs WHERE id = :id")
     suspend fun deleteCallLog(id: Long)
 
+    @Query("DELETE FROM call_logs WHERE recordingPath IS NULL AND notes IS NULL")
+    suspend fun clearUnrecordedCallLogs()
+
     @Query("DELETE FROM call_logs")
     suspend fun clearCallLogs()
 }
