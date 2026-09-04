@@ -9,6 +9,8 @@ import android.telephony.SmsManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -84,77 +86,79 @@ fun MessagesScreen(
         return if (digits.length >= 10) digits.takeLast(10) else digits
     }
 
-    // Fetch and aggregate ALL SMS Messages grouped strictly by Normalized Phone Number
-    val threads = remember(contacts) {
-        val list = mutableListOf<MessageThread>()
-        try {
-            val cursor: Cursor? = context.contentResolver.query(
-                Telephony.Sms.CONTENT_URI,
-                arrayOf("_id", "thread_id", "address", "body", "date", "read", "type"),
-                null,
-                null,
-                "date DESC"
-            )
-            cursor?.use {
-                val threadIdIdx = it.getColumnIndex("thread_id")
-                val addressIdx = it.getColumnIndex("address")
-                val bodyIdx = it.getColumnIndex("body")
-                val dateIdx = it.getColumnIndex("date")
-                val readIdx = it.getColumnIndex("read")
+    // Fetch and aggregate ALL SMS Messages grouped strictly by Normalized Phone Number off the UI thread
+    val threads by produceState<List<MessageThread>>(initialValue = emptyList(), key1 = contacts) {
+        value = withContext(Dispatchers.IO) {
+            val list = mutableListOf<MessageThread>()
+            try {
+                val cursor: Cursor? = context.contentResolver.query(
+                    Telephony.Sms.CONTENT_URI,
+                    arrayOf("_id", "thread_id", "address", "body", "date", "read", "type"),
+                    null,
+                    null,
+                    "date DESC"
+                )
+                cursor?.use {
+                    val threadIdIdx = it.getColumnIndex("thread_id")
+                    val addressIdx = it.getColumnIndex("address")
+                    val bodyIdx = it.getColumnIndex("body")
+                    val dateIdx = it.getColumnIndex("date")
+                    val readIdx = it.getColumnIndex("read")
 
-                val groupedMap = LinkedHashMap<String, MutableList<Pair<Long, String>>>() // normKey -> list of (date, body)
-                val addressDisplayMap = HashMap<String, String>()
-                val threadIdMap = HashMap<String, MutableList<Long>>()
-                val unreadCountMap = HashMap<String, Int>()
+                    val groupedMap = LinkedHashMap<String, MutableList<Pair<Long, String>>>()
+                    val addressDisplayMap = HashMap<String, String>()
+                    val threadIdMap = HashMap<String, MutableList<Long>>()
+                    val unreadCountMap = HashMap<String, Int>()
 
-                while (it.moveToNext()) {
-                    val threadId = if (threadIdIdx >= 0) it.getLong(threadIdIdx) else 0L
-                    val rawAddress = if (addressIdx >= 0) it.getString(addressIdx) ?: "" else ""
-                    val body = if (bodyIdx >= 0) it.getString(bodyIdx) ?: "" else ""
-                    val date = if (dateIdx >= 0) it.getLong(dateIdx) else System.currentTimeMillis()
-                    val read = if (readIdx >= 0) it.getInt(readIdx) == 1 else true
+                    while (it.moveToNext()) {
+                        val threadId = if (threadIdIdx >= 0) it.getLong(threadIdIdx) else 0L
+                        val rawAddress = if (addressIdx >= 0) it.getString(addressIdx) ?: "" else ""
+                        val body = if (bodyIdx >= 0) it.getString(bodyIdx) ?: "" else ""
+                        val date = if (dateIdx >= 0) it.getLong(dateIdx) else System.currentTimeMillis()
+                        val read = if (readIdx >= 0) it.getInt(readIdx) == 1 else true
 
-                    if (rawAddress.isNotBlank()) {
-                        val normKey = normalizeNumber(rawAddress)
-                        if (normKey.isNotBlank()) {
-                            groupedMap.getOrPut(normKey) { mutableListOf() }.add(Pair(date, body))
-                            if (!addressDisplayMap.containsKey(normKey)) {
-                                addressDisplayMap[normKey] = rawAddress
-                            }
-                            if (threadId > 0) {
-                                threadIdMap.getOrPut(normKey) { mutableListOf() }.add(threadId)
-                            }
-                            if (!read) {
-                                unreadCountMap[normKey] = (unreadCountMap[normKey] ?: 0) + 1
+                        if (rawAddress.isNotBlank()) {
+                            val normKey = normalizeNumber(rawAddress)
+                            if (normKey.isNotBlank()) {
+                                groupedMap.getOrPut(normKey) { mutableListOf() }.add(Pair(date, body))
+                                if (!addressDisplayMap.containsKey(normKey)) {
+                                    addressDisplayMap[normKey] = rawAddress
+                                }
+                                if (threadId > 0) {
+                                    threadIdMap.getOrPut(normKey) { mutableListOf() }.add(threadId)
+                                }
+                                if (!read) {
+                                    unreadCountMap[normKey] = (unreadCountMap[normKey] ?: 0) + 1
+                                }
                             }
                         }
                     }
-                }
 
-                groupedMap.forEach { (normKey, itemsList) ->
-                    val displayAddress = addressDisplayMap[normKey] ?: normKey
-                    val latestItem = itemsList.first()
-                    val matchingContact = contacts.find { c ->
-                        c.numbers.any { num -> normalizeNumber(num) == normKey }
-                    }
+                    groupedMap.forEach { (normKey, itemsList) ->
+                        val displayAddress = addressDisplayMap[normKey] ?: normKey
+                        val latestItem = itemsList.first()
+                        val matchingContact = contacts.find { c ->
+                            c.numbers.any { num -> normalizeNumber(num) == normKey }
+                        }
 
-                    list.add(
-                        MessageThread(
-                            normalizedNumber = normKey,
-                            displayAddress = displayAddress,
-                            contactName = matchingContact?.name,
-                            latestBody = latestItem.second,
-                            latestTimestamp = latestItem.first,
-                            unreadCount = unreadCountMap[normKey] ?: 0,
-                            threadIds = threadIdMap[normKey]?.distinct() ?: emptyList()
+                        list.add(
+                            MessageThread(
+                                normalizedNumber = normKey,
+                                displayAddress = displayAddress,
+                                contactName = matchingContact?.name,
+                                latestBody = latestItem.second,
+                                latestTimestamp = latestItem.first,
+                                unreadCount = unreadCountMap[normKey] ?: 0,
+                                threadIds = threadIdMap[normKey]?.distinct() ?: emptyList()
+                            )
                         )
-                    )
+                    }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+            list
         }
-        list
     }
 
     val filteredThreads = remember(searchQuery, threads) {
@@ -323,39 +327,44 @@ fun MessagesScreen(
                                 unfocusedBorderColor = Color.Transparent
                             )
                         )
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                        IconButton(onClick = {
+                            if (searchQuery.isNotEmpty()) {
+                                searchQuery = ""
+                            } else {
+                                isSearchOpen = false
                             }
-                        }
-                        IconButton(onClick = { isSearchOpen = false; searchQuery = "" }) {
+                        }) {
                             Icon(Icons.Default.Close, contentDescription = "Close Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             }
 
-            // Floating Action Buttons: Search FAB on Bottom Left + New Message FAB on Bottom Right (Hidden when search is open)
+            // Dual Floating Action Buttons: Search FAB + New Message FAB on Bottom Right (Hidden when search is open)
             if (!isSearchOpen) {
-                Box(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(20.dp)) {
-                    // Bottom Left Search Icon
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     FloatingActionButton(
                         onClick = { isSearchOpen = true },
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = MaterialTheme.colorScheme.primary,
                         shape = CircleShape,
-                        modifier = Modifier.align(Alignment.BottomStart).size(52.dp).shadow(6.dp, CircleShape)
+                        modifier = Modifier.size(52.dp).shadow(6.dp, CircleShape)
                     ) {
                         Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
                     }
 
-                    // Bottom Right New Message FAB
                     FloatingActionButton(
                         onClick = { showNewComposer = true },
                         containerColor = AccentGreen,
                         contentColor = Color.White,
                         shape = CircleShape,
-                        modifier = Modifier.align(Alignment.BottomEnd).size(64.dp).shadow(12.dp, CircleShape)
+                        modifier = Modifier.size(64.dp).shadow(12.dp, CircleShape)
                     ) {
                         Icon(Icons.Default.Chat, contentDescription = "New Message", modifier = Modifier.size(28.dp))
                     }

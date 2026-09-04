@@ -157,12 +157,13 @@ fun ContactsScreen(
                                 unfocusedBorderColor = Color.Transparent
                             )
                         )
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                        IconButton(onClick = {
+                            if (searchQuery.isNotEmpty()) {
+                                searchQuery = ""
+                            } else {
+                                isSearchOpen = false
                             }
-                        }
-                        IconButton(onClick = { isSearchOpen = false; searchQuery = "" }) {
+                        }) {
                             Icon(Icons.Default.Close, contentDescription = "Close Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
