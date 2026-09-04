@@ -56,6 +56,7 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     var currentTab by remember { mutableStateOf(MainTab.DIALER) }
+    val tabHistory = remember { mutableStateListOf(MainTab.DIALER) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showAboutScreen by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
@@ -63,13 +64,28 @@ fun MainScreen(
     
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
+    fun navigateToTab(tab: MainTab) {
+        if (currentTab != tab) {
+            currentTab = tab
+            tabHistory.add(tab)
+        }
+    }
+
     // Root Level Back Handler for Smooth Navigation & Double-Back App Exit
     BackHandler {
         when {
             selectedContactDetails != null -> selectedContactDetails = null
             showAboutScreen -> showAboutScreen = false
             showSettingsScreen -> showSettingsScreen = false
-            currentTab != MainTab.DIALER -> currentTab = MainTab.DIALER
+            tabHistory.size > 1 -> {
+                tabHistory.removeAt(tabHistory.lastIndex)
+                currentTab = tabHistory.last()
+            }
+            currentTab != MainTab.DIALER -> {
+                currentTab = MainTab.DIALER
+                tabHistory.clear()
+                tabHistory.add(MainTab.DIALER)
+            }
             else -> {
                 val now = System.currentTimeMillis()
                 if (now - lastBackPressTime < 2000) {
@@ -186,28 +202,28 @@ fun MainScreen(
                     // 1. Dialer
                     NavigationBarItem(
                         selected = currentTab == MainTab.DIALER,
-                        onClick = { currentTab = MainTab.DIALER },
+                        onClick = { navigateToTab(MainTab.DIALER) },
                         icon = { Icon(Icons.Default.Call, contentDescription = "Dialer") },
                         label = { Text("Dialer", fontSize = 12.sp) }
                     )
                     // 2. Contacts
                     NavigationBarItem(
                         selected = currentTab == MainTab.CONTACTS,
-                        onClick = { currentTab = MainTab.CONTACTS },
+                        onClick = { navigateToTab(MainTab.CONTACTS) },
                         icon = { Icon(Icons.Default.People, contentDescription = "Contacts") },
                         label = { Text("Contacts", fontSize = 12.sp) }
                     )
                     // 3. Messages
                     NavigationBarItem(
                         selected = currentTab == MainTab.MESSAGES,
-                        onClick = { currentTab = MainTab.MESSAGES },
+                        onClick = { navigateToTab(MainTab.MESSAGES) },
                         icon = { Icon(Icons.Default.Message, contentDescription = "Messages") },
                         label = { Text("Messages", fontSize = 12.sp) }
                     )
                     // 4. Favorites
                     NavigationBarItem(
                         selected = currentTab == MainTab.FAVORITES,
-                        onClick = { currentTab = MainTab.FAVORITES },
+                        onClick = { navigateToTab(MainTab.FAVORITES) },
                         icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
                         label = { Text("Favorites", fontSize = 12.sp) }
                     )

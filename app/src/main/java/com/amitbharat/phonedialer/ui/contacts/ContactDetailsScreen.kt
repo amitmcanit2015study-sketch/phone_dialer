@@ -1,5 +1,6 @@
 package com.amitbharat.phonedialer.ui.contacts
 
+import androidx.activity.compose.BackHandler
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -55,6 +56,7 @@ fun ContactDetailsScreen(
     onEditContact: ((Contact) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    BackHandler { onBack() }
 
     val filteredLogs = remember(number, callLogs) {
         val cleanNum = number.replace("[^0-9+]".toRegex(), "")
@@ -108,7 +110,8 @@ fun ContactDetailsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 14.dp, vertical = 6.dp)
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp)
         ) {
             // Header Hero Section
             item {

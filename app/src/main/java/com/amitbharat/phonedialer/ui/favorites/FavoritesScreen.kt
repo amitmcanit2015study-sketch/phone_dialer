@@ -71,7 +71,10 @@ fun FavoritesScreen(
                 }
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp)
+            ) {
                 items(favorites, key = { it.id.toString() + "_" + it.name }) { contact ->
                     Card(
                         shape = RoundedCornerShape(16.dp),

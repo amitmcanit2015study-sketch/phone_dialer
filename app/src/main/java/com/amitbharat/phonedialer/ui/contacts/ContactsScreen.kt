@@ -1,5 +1,6 @@
 package com.amitbharat.phonedialer.ui.contacts
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -37,6 +38,17 @@ fun ContactsScreen(
     var isSearchOpen by remember { mutableStateOf(false) }
     var showAddScreen by remember { mutableStateOf(false) }
     var editingContact by remember { mutableStateOf<Contact?>(null) }
+
+    BackHandler(enabled = isSearchOpen || showAddScreen || editingContact != null) {
+        when {
+            showAddScreen -> showAddScreen = false
+            editingContact != null -> editingContact = null
+            isSearchOpen -> {
+                isSearchOpen = false
+                searchQuery = ""
+            }
+        }
+    }
 
     val filteredContacts = remember(searchQuery, contacts) {
         if (searchQuery.isBlank()) contacts
@@ -99,7 +111,7 @@ fun ContactsScreen(
                 } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 80.dp)
+                        contentPadding = PaddingValues(top = 12.dp, bottom = if (isSearchOpen) 150.dp else 100.dp)
                     ) {
                         items(filteredContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
                             ContactItemRow(
@@ -113,67 +125,80 @@ fun ContactsScreen(
                 }
             }
 
-            // Expandable Bottom Search Bar (Item 6: Open search box on the bottom)
+            // Expandable Bottom Search Bar (Item 2 & 4: Aligned single bar at bottom)
             AnimatedVisibility(
                 visible = isSearchOpen,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 76.dp)
+                    .padding(bottom = 16.dp)
             ) {
-                Surface(
-                    shadowElevation = 8.dp,
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                Card(
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp)
                 ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search contacts…") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
-                                }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search contacts…", fontSize = 14.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent
+                            )
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        singleLine = true
-                    )
+                        }
+                        IconButton(onClick = { isSearchOpen = false; searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
 
-            // Dual Floating Action Buttons: Search FAB + Contact Add FAB on Bottom Right
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(20.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Floating Search FAB
-                FloatingActionButton(
-                    onClick = { isSearchOpen = !isSearchOpen },
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    shape = CircleShape,
-                    modifier = Modifier.size(52.dp).shadow(6.dp, CircleShape)
+            // Dual Floating Action Buttons: Search FAB + Contact Add FAB on Bottom Right (Hidden when search is open)
+            if (!isSearchOpen) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
-                }
+                    // Floating Search FAB
+                    FloatingActionButton(
+                        onClick = { isSearchOpen = true },
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        shape = CircleShape,
+                        modifier = Modifier.size(52.dp).shadow(6.dp, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
+                    }
 
-                // Add Contact FAB
-                FloatingActionButton(
-                    onClick = { showAddScreen = true },
-                    containerColor = AccentGreen,
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    modifier = Modifier.size(64.dp).shadow(12.dp, CircleShape)
-                ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact", modifier = Modifier.size(30.dp))
+                    // Add Contact FAB
+                    FloatingActionButton(
+                        onClick = { showAddScreen = true },
+                        containerColor = AccentGreen,
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        modifier = Modifier.size(64.dp).shadow(12.dp, CircleShape)
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact", modifier = Modifier.size(30.dp))
+                    }
                 }
             }
         }

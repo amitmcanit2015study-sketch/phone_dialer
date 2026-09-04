@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Telephony
 import android.telephony.SmsManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,6 +67,17 @@ fun MessagesScreen(
     var isSearchOpen by remember { mutableStateOf(false) }
     var selectedThread by remember { mutableStateOf<MessageThread?>(null) }
     var showNewComposer by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showNewComposer || selectedThread != null || isSearchOpen) {
+        when {
+            showNewComposer -> showNewComposer = false
+            selectedThread != null -> selectedThread = null
+            isSearchOpen -> {
+                isSearchOpen = false
+                searchQuery = ""
+            }
+        }
+    }
 
     fun normalizeNumber(raw: String): String {
         val digits = raw.replace(Regex("[^0-9]"), "")
@@ -217,7 +229,7 @@ fun MessagesScreen(
                 } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 80.dp)
+                        contentPadding = PaddingValues(top = 12.dp, bottom = if (isSearchOpen) 150.dp else 100.dp)
                     ) {
                         items(filteredThreads, key = { it.normalizedNumber }) { thread ->
                             val formattedTime = remember(thread.latestTimestamp) {
@@ -279,61 +291,74 @@ fun MessagesScreen(
                 }
             }
 
-            // Expandable Bottom Search Bar (Item 7: Search box on the bottom)
+            // Expandable Bottom Search Bar (Item 2 & 5: Aligned single bar at bottom)
             AnimatedVisibility(
                 visible = isSearchOpen,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 76.dp)
+                    .padding(bottom = 16.dp)
             ) {
-                Surface(
-                    shadowElevation = 8.dp,
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                Card(
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp)
                 ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search messages…") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
-                                }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search messages…", fontSize = 14.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent
+                            )
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        singleLine = true
-                    )
+                        }
+                        IconButton(onClick = { isSearchOpen = false; searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
 
-            // Floating Action Buttons: Search FAB on Bottom Left + New Message FAB on Float Right (Item 7)
-            Box(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(20.dp)) {
-                // Bottom Left Search Icon
-                FloatingActionButton(
-                    onClick = { isSearchOpen = !isSearchOpen },
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    shape = CircleShape,
-                    modifier = Modifier.align(Alignment.BottomStart).size(52.dp).shadow(6.dp, CircleShape)
-                ) {
-                    Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
-                }
+            // Floating Action Buttons: Search FAB on Bottom Left + New Message FAB on Bottom Right (Hidden when search is open)
+            if (!isSearchOpen) {
+                Box(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(20.dp)) {
+                    // Bottom Left Search Icon
+                    FloatingActionButton(
+                        onClick = { isSearchOpen = true },
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        shape = CircleShape,
+                        modifier = Modifier.align(Alignment.BottomStart).size(52.dp).shadow(6.dp, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
+                    }
 
-                // Bottom Right New Message FAB
-                FloatingActionButton(
-                    onClick = { showNewComposer = true },
-                    containerColor = AccentGreen,
-                    contentColor = Color.White,
-                    shape = CircleShape,
-                    modifier = Modifier.align(Alignment.BottomEnd).size(64.dp).shadow(12.dp, CircleShape)
-                ) {
-                    Icon(Icons.Default.Chat, contentDescription = "New Message", modifier = Modifier.size(28.dp))
+                    // Bottom Right New Message FAB
+                    FloatingActionButton(
+                        onClick = { showNewComposer = true },
+                        containerColor = AccentGreen,
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        modifier = Modifier.align(Alignment.BottomEnd).size(64.dp).shadow(12.dp, CircleShape)
+                    ) {
+                        Icon(Icons.Default.Chat, contentDescription = "New Message", modifier = Modifier.size(28.dp))
+                    }
                 }
             }
         }
@@ -370,8 +395,8 @@ fun NewMessageComposerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Recipient Field with Contact Add Plus Icon Button (+)
             OutlinedTextField(
@@ -393,12 +418,10 @@ fun NewMessageComposerScreen(
                 value = messageText,
                 onValueChange = { messageText = it },
                 label = { Text("Type your message…") },
-                minLines = 5,
+                minLines = 4,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
             )
-
-            Spacer(Modifier.weight(1f))
 
             // Send Action Button
             Button(
@@ -421,7 +444,7 @@ fun NewMessageComposerScreen(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
                 shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.fillMaxWidth().height(54.dp)
+                modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White)
                 Spacer(Modifier.width(8.dp))
@@ -480,14 +503,15 @@ fun ChatThreadScreen(
 ) {
     val context = LocalContext.current
     var messageInput by remember { mutableStateOf("") }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
 
     fun normalizeNumber(raw: String): String {
         val digits = raw.replace(Regex("[^0-9]"), "")
         return if (digits.length >= 10) digits.takeLast(10) else digits
     }
 
-    // Fetch all SMS messages for this normalized number (Item 10)
-    val messages = remember(thread.normalizedNumber) {
+    // Fetch all SMS messages for this normalized number (Item 10 & 9 auto-refresh)
+    val messages = remember(thread.normalizedNumber, refreshTrigger) {
         val list = mutableListOf<SmsMessageItem>()
         try {
             val cursor: Cursor? = context.contentResolver.query(
@@ -585,11 +609,13 @@ fun ChatThreadScreen(
                                     smsManager.sendTextMessage(thread.displayAddress, null, messageInput, null, null)
                                     Toast.makeText(context, "Message sent", Toast.LENGTH_SHORT).show()
                                     messageInput = ""
+                                    refreshTrigger++
                                 } catch (e: Exception) {
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("sms:${thread.displayAddress}")).apply {
                                         putExtra("sms_body", messageInput)
                                     }
                                     context.startActivity(intent)
+                                    refreshTrigger++
                                 }
                             }
                         },
@@ -602,7 +628,7 @@ fun ChatThreadScreen(
         }
     ) { innerPadding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 12.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(messages, key = { it.id.toString() + "_" + it.timestamp }) { msg ->

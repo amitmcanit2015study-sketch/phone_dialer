@@ -88,7 +88,7 @@ class CallLogRepository(private val context: Context) {
                 ),
                 null,
                 null,
-                CallLog.Calls.DATE + " DESC LIMIT 400"
+                CallLog.Calls.DATE + " DESC"
             )
 
             cursor?.use {

@@ -5,6 +5,7 @@ import android.media.MediaPlayer
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -89,6 +90,17 @@ fun DialerScreen(
     var isSearchOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var playingAudioPath by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = isDialpadOpen || isSearchOpen || enteredNumber.isNotEmpty()) {
+        when {
+            isDialpadOpen -> isDialpadOpen = false
+            isSearchOpen -> {
+                isSearchOpen = false
+                searchQuery = ""
+            }
+            enteredNumber.isNotEmpty() -> enteredNumber = ""
+        }
+    }
 
     // Fast saved number lookup map
     val savedNumberMap = remember(allContacts) {
@@ -287,27 +299,27 @@ fun DialerScreen(
                     Tab(
                         selected = pagerState.currentPage == 0,
                         onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                        text = { Text("All ($totalCallsCount)", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                        text = { Text("All", fontWeight = FontWeight.Bold, fontSize = 14.sp) }
                     )
                     Tab(
                         selected = pagerState.currentPage == 1,
                         onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } },
-                        text = { Text("Missed ($missedCallsCount)", color = AccentRed, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                        text = { Text("Missed", color = AccentRed, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
                     )
                     Tab(
                         selected = pagerState.currentPage == 2,
                         onClick = { coroutineScope.launch { pagerState.animateScrollToPage(2) } },
-                        text = { Text("Received ($receivedCallsCount)", color = AccentGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                        text = { Text("Received", color = AccentGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp) }
                     )
                     Tab(
                         selected = pagerState.currentPage == 3,
                         onClick = { coroutineScope.launch { pagerState.animateScrollToPage(3) } },
-                        text = { Text("Dialed ($dialedCallsCount)", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                        text = { Text("Dialed", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold, fontSize = 14.sp) }
                     )
                     Tab(
                         selected = pagerState.currentPage == 4,
                         onClick = { coroutineScope.launch { pagerState.animateScrollToPage(4) } },
-                        text = { Text("Recorded ($recordedCallsCount)", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                        text = { Text("Recorded", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold, fontSize = 14.sp) }
                     )
                 }
             }
@@ -404,7 +416,8 @@ fun DialerScreen(
                             }
                         } else {
                             LazyColumn(
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 2.dp)
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 2.dp),
+                                contentPadding = PaddingValues(bottom = if (isSearchOpen) 150.dp else 100.dp)
                             ) {
                                 pageFilteredLogs.forEach { (dayHeader, logsInDay) ->
                                     // Section Header Count specific to the selected tab!
@@ -578,34 +591,47 @@ fun DialerScreen(
                 }
             }
 
-            // 5. Expandable Bottom Search Bar (Item 5: Open Search Box in Bottom)
+            // 5. Expandable Bottom Search Bar (Item 2 & 4: Aligned single bar at bottom)
             AnimatedVisibility(
                 visible = isSearchOpen,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 16.dp)
             ) {
-                Surface(
-                    shadowElevation = 8.dp,
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+                Card(
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp)
                 ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search call history, name or number…") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                        trailingIcon = {
-                            IconButton(onClick = {
-                                isSearchOpen = false
-                                searchQuery = ""
-                            }) {
-                                Icon(Icons.Default.Close, contentDescription = "Close Search")
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search call history or contact…", fontSize = 14.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent
+                            )
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        singleLine = true
-                    )
+                        }
+                        IconButton(onClick = { isSearchOpen = false; searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         }
@@ -631,8 +657,8 @@ fun DialerScreen(
             }
         }
 
-        // Dual Floating Action Buttons: Search FAB + Keypad FAB
-        if (!isDialpadOpen) {
+        // Dual Floating Action Buttons: Search FAB + Keypad FAB (Hidden when search is open)
+        if (!isDialpadOpen && !isSearchOpen) {
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -641,13 +667,13 @@ fun DialerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FloatingActionButton(
-                    onClick = { isSearchOpen = !isSearchOpen },
+                    onClick = { isSearchOpen = true },
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = MaterialTheme.colorScheme.primary,
                     shape = CircleShape,
                     modifier = Modifier.size(52.dp).shadow(6.dp, CircleShape)
                 ) {
-                    Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
+                    Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
                 }
 
                 FloatingActionButton(
