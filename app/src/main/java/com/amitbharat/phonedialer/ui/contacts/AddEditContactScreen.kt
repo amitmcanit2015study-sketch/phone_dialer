@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,9 +43,9 @@ fun AddEditContactScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (initialContact == null) "Create New Contact" else "Edit Contact",
+                        text = if (initialContact == null) "Create Contact" else "Edit Contact",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 19.sp
+                        fontSize = 18.sp
                     )
                 },
                 navigationIcon = {
@@ -97,14 +98,14 @@ fun AddEditContactScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Big Contact Icon Placeholder
+            // Contact Avatar Header
             Box(
                 modifier = Modifier
-                    .size(90.dp)
+                    .size(76.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
@@ -112,12 +113,10 @@ fun AddEditContactScreen(
                 Icon(
                     Icons.Default.Person,
                     contentDescription = null,
-                    modifier = Modifier.size(54.dp),
+                    modifier = Modifier.size(46.dp),
                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
-
-            Spacer(Modifier.height(4.dp))
 
             // First Name
             OutlinedTextField(
@@ -190,9 +189,9 @@ fun AddEditContactScreen(
                 value = notes,
                 onValueChange = { notes = it },
                 label = { Text("Notes / Remarks") },
-                leadingIcon = { Icon(Icons.Default.Notes, contentDescription = null) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Notes, contentDescription = null) },
                 minLines = 2,
-                maxLines = 4,
+                maxLines = 3,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -205,7 +204,7 @@ fun AddEditContactScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {

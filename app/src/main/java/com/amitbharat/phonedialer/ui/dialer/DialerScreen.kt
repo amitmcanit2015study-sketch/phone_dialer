@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -45,20 +47,22 @@ import com.amitbharat.phonedialer.ui.theme.AccentGreen
 import com.amitbharat.phonedialer.ui.theme.AccentRed
 import com.amitbharat.phonedialer.utils.ContactAvatar
 import com.amitbharat.phonedialer.utils.PreferencesManager
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-data class ConsolidatedCallLog(
+data class DayConsolidatedLog(
+    val dayKey: String,
     val primaryId: Long,
     val name: String?,
     val number: String,
     val latestTimestamp: Long,
-    val totalCount: Int,
-    val incomingCount: Int,
-    val outgoingCount: Int,
-    val missedCount: Int,
+    val dayTotalCount: Int,
+    val dayIncomingCount: Int,
+    val dayOutgoingCount: Int,
+    val dayMissedCount: Int,
     val latestCallType: CallType,
-    val totalDuration: Long,
+    val dayTotalDuration: Long,
     val hasRecording: Boolean,
     val calls: List<CallLogItem>
 )
@@ -72,84 +76,20 @@ fun DialerScreen(
     speedDials: List<SpeedDialItem>,
     onCallClick: (String, Int) -> Unit,
     onDeleteCallLog: (Long) -> Unit,
-    externalSearchQuery: String = "",
+    onContactClick: (name: String, number: String, photoUri: String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val prefs = remember { PreferencesManager.getInstance(context) }
+    val coroutineScope = rememberCoroutineScope()
+
     var enteredNumber by remember { mutableStateOf("") }
     var isDialpadOpen by remember { mutableStateOf(false) }
-    var selectedFilterIndex by remember { mutableIntStateOf(0) }
-    var selectedGroupForDetails by remember { mutableStateOf<ConsolidatedCallLog?>(null) }
+    var isSearchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
-    // Group calls by contact/number into ConsolidatedCallLog
-    val consolidatedLogs = remember(callLogs) {
-        val groupedList = mutableListOf<ConsolidatedCallLog>()
-        val map = LinkedHashMap<String, MutableList<CallLogItem>>()
-
-        for (item in callLogs) {
-            val key = item.name?.trim()?.ifBlank { null } ?: item.number.replace("[^0-9+]".toRegex(), "")
-            map.getOrPut(key) { mutableListOf() }.add(item)
-        }
-
-        map.values.forEach { items ->
-            val first = items.first()
-            val total = items.size
-            val incoming = items.count { it.callType == CallType.INCOMING }
-            val outgoing = items.count { it.callType == CallType.OUTGOING }
-            val missed = items.count { it.callType == CallType.MISSED || it.callType == CallType.REJECTED }
-            val dur = items.sumOf { it.duration }
-            val hasRec = items.any { it.recordingPath != null }
-
-            groupedList.add(
-                ConsolidatedCallLog(
-                    primaryId = first.id,
-                    name = first.name,
-                    number = first.number,
-                    latestTimestamp = first.timestamp,
-                    totalCount = total,
-                    incomingCount = incoming,
-                    outgoingCount = outgoing,
-                    missedCount = missed,
-                    latestCallType = first.callType,
-                    totalDuration = dur,
-                    hasRecording = hasRec,
-                    calls = items
-                )
-            )
-        }
-        groupedList
-    }
-
-    // Sub-filters live counts
-    val totalCallsCount = consolidatedLogs.size
-    val missedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.missedCount > 0 } }
-    val receivedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.incomingCount > 0 } }
-    val dialedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.outgoingCount > 0 } }
-    val recordedCallsCount = remember(consolidatedLogs) { consolidatedLogs.count { it.hasRecording } }
-
-    val filteredList = remember(selectedFilterIndex, consolidatedLogs, externalSearchQuery) {
-        val base = when (selectedFilterIndex) {
-            1 -> consolidatedLogs.filter { it.missedCount > 0 }
-            2 -> consolidatedLogs.filter { it.incomingCount > 0 }
-            3 -> consolidatedLogs.filter { it.outgoingCount > 0 }
-            4 -> consolidatedLogs.filter { it.hasRecording }
-            else -> consolidatedLogs
-        }
-        if (externalSearchQuery.isBlank()) base
-        else base.filter {
-            (it.name?.contains(externalSearchQuery, ignoreCase = true) == true) || it.number.contains(externalSearchQuery)
-        }
-    }
-
-    // T9 search results from typed number
-    val matchedContacts = remember(enteredNumber, allContacts) {
-        if (enteredNumber.isEmpty()) emptyList()
-        else T9SearchEngine.search(enteredNumber, allContacts)
-    }
-
-    // Group filtered call logs day-wise
-    val groupedByDay = remember(filteredList) {
+    // 1. Group call logs strictly BY DAY first, then BY CONTACT/NUMBER for day-wise accurate counts
+    val dayGroupedLogs = remember(callLogs) {
         val todayMs = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -159,14 +99,74 @@ fun DialerScreen(
 
         val yesterdayMs = todayMs - 24 * 60 * 60 * 1000L
 
-        filteredList.groupBy { item ->
-            val timestamp = item.latestTimestamp
-            when {
+        val dayBuckets = LinkedHashMap<String, MutableList<CallLogItem>>()
+
+        for (item in callLogs) {
+            val timestamp = item.timestamp
+            val dayKey = when {
                 timestamp >= todayMs -> "Today"
                 timestamp >= yesterdayMs -> "Yesterday"
                 else -> SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(timestamp))
             }
+            dayBuckets.getOrPut(dayKey) { mutableListOf() }.add(item)
         }
+
+        val result = LinkedHashMap<String, List<DayConsolidatedLog>>()
+
+        dayBuckets.forEach { (dayKey, itemsInDay) ->
+            val contactMap = LinkedHashMap<String, MutableList<CallLogItem>>()
+            for (item in itemsInDay) {
+                val key = item.name?.trim()?.ifBlank { null } ?: item.number.replace("[^0-9+]".toRegex(), "")
+                contactMap.getOrPut(key) { mutableListOf() }.add(item)
+            }
+
+            val consolidatedList = mutableListOf<DayConsolidatedLog>()
+            contactMap.values.forEach { items ->
+                val first = items.first()
+                val dayTotal = items.size
+                val incoming = items.count { it.callType == CallType.INCOMING }
+                val outgoing = items.count { it.callType == CallType.OUTGOING }
+                val missed = items.count { it.callType == CallType.MISSED || it.callType == CallType.REJECTED }
+                val dur = items.sumOf { it.duration }
+                val hasRec = items.any { it.recordingPath != null }
+
+                consolidatedList.add(
+                    DayConsolidatedLog(
+                        dayKey = dayKey,
+                        primaryId = first.id,
+                        name = first.name,
+                        number = first.number,
+                        latestTimestamp = first.timestamp,
+                        dayTotalCount = dayTotal,
+                        dayIncomingCount = incoming,
+                        dayOutgoingCount = outgoing,
+                        dayMissedCount = missed,
+                        latestCallType = first.callType,
+                        dayTotalDuration = dur,
+                        hasRecording = hasRec,
+                        calls = items
+                    )
+                )
+            }
+            result[dayKey] = consolidatedList
+        }
+        result
+    }
+
+    // Counts for sub-filters (Live & Accurate)
+    val allLogsList = remember(dayGroupedLogs) { dayGroupedLogs.values.flatten() }
+    val totalCallsCount = allLogsList.size
+    val missedCallsCount = remember(allLogsList) { allLogsList.count { it.dayMissedCount > 0 } }
+    val receivedCallsCount = remember(allLogsList) { allLogsList.count { it.dayIncomingCount > 0 } }
+    val dialedCallsCount = remember(allLogsList) { allLogsList.count { it.dayOutgoingCount > 0 } }
+    val recordedCallsCount = remember(allLogsList) { allLogsList.count { it.hasRecording } }
+
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 5 })
+
+    // T9 search matches from typed number
+    val matchedContacts = remember(enteredNumber, allContacts) {
+        if (enteredNumber.isEmpty()) emptyList()
+        else T9SearchEngine.search(enteredNumber, allContacts)
     }
 
     fun handleKeyPress(char: String) {
@@ -195,8 +195,31 @@ fun DialerScreen(
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // 1. Horizontal Favorites Bar (With Count Badge)
-            if (favorites.isNotEmpty() && externalSearchQuery.isEmpty() && enteredNumber.isEmpty()) {
+            // 1. Expandable Floating Search Box (Activated via FAB)
+            if (isSearchOpen) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search call history, name or number…") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            isSearchOpen = false
+                            searchQuery = ""
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Search")
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    singleLine = true
+                )
+            }
+
+            // 2. Horizontal Favorites Bar
+            if (favorites.isNotEmpty() && searchQuery.isEmpty() && enteredNumber.isEmpty()) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp)) {
                     Text(
                         text = "FAVORITES (${favorites.size})",
@@ -239,46 +262,46 @@ fun DialerScreen(
                 }
             }
 
-            // 2. Sub-Filter Tabs Row with Accurate Live Counts
+            // 3. Sub-Filter Tabs Row with Smooth Swipe Support
             if (enteredNumber.isEmpty()) {
                 ScrollableTabRow(
-                    selectedTabIndex = selectedFilterIndex,
+                    selectedTabIndex = pagerState.currentPage,
                     edgePadding = 12.dp,
                     containerColor = MaterialTheme.colorScheme.background,
                     divider = {}
                 ) {
                     Tab(
-                        selected = selectedFilterIndex == 0,
-                        onClick = { selectedFilterIndex = 0 },
+                        selected = pagerState.currentPage == 0,
+                        onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } },
                         text = { Text("All ($totalCallsCount)", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                     )
                     Tab(
-                        selected = selectedFilterIndex == 1,
-                        onClick = { selectedFilterIndex = 1 },
+                        selected = pagerState.currentPage == 1,
+                        onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } },
                         text = { Text("Missed ($missedCallsCount)", color = AccentRed, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                     )
                     Tab(
-                        selected = selectedFilterIndex == 2,
-                        onClick = { selectedFilterIndex = 2 },
+                        selected = pagerState.currentPage == 2,
+                        onClick = { coroutineScope.launch { pagerState.animateScrollToPage(2) } },
                         text = { Text("Received ($receivedCallsCount)", color = AccentGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                     )
                     Tab(
-                        selected = selectedFilterIndex == 3,
-                        onClick = { selectedFilterIndex = 3 },
+                        selected = pagerState.currentPage == 3,
+                        onClick = { coroutineScope.launch { pagerState.animateScrollToPage(3) } },
                         text = { Text("Dialed ($dialedCallsCount)", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                     )
                     Tab(
-                        selected = selectedFilterIndex == 4,
-                        onClick = { selectedFilterIndex = 4 },
+                        selected = pagerState.currentPage == 4,
+                        onClick = { coroutineScope.launch { pagerState.animateScrollToPage(4) } },
                         text = { Text("Recorded ($recordedCallsCount)", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                     )
                 }
             }
 
-            // 3. Main Call History List or T9 Search Matches at Top
+            // 4. Main Body: Swipeable Pager for Sub-Filters or T9 Search Results
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 if (enteredNumber.isNotEmpty()) {
-                    // T9 Search Match Results displayed at top of list
+                    // T9 Search Match Results at top of list
                     if (matchedContacts.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("No contacts match '$enteredNumber'", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
@@ -304,7 +327,7 @@ fun DialerScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            onCallClick(contact.numbers.firstOrNull() ?: enteredNumber, 0)
+                                            onContactClick(contact.name, contact.numbers.firstOrNull() ?: enteredNumber, contact.photoUri)
                                         }
                                 ) {
                                     Row(
@@ -330,117 +353,150 @@ fun DialerScreen(
                             }
                         }
                     }
-                } else if (filteredList.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(54.dp))
-                            Spacer(Modifier.height(8.dp))
-                            Text("No call history in this category", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
                 } else {
-                    // Day-wise Grouped Call History List
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 2.dp)
-                    ) {
-                        groupedByDay.forEach { (dayHeader, logsInDay) ->
-                            item(key = "header_$dayHeader") {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.background,
-                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
-                                ) {
-                                    Text(
-                                        text = "$dayHeader (${logsInDay.size})",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                    // Swipeable Horizontal Pager across All, Missed, Received, Dialed, Recorded
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize()
+                    ) { pageIndex ->
+                        val pageFilteredLogs = remember(dayGroupedLogs, pageIndex, searchQuery) {
+                            val map = LinkedHashMap<String, List<DayConsolidatedLog>>()
+                            dayGroupedLogs.forEach { (dayKey, itemsInDay) ->
+                                val filtered = itemsInDay.filter { item ->
+                                    val matchesSearch = searchQuery.isBlank() ||
+                                            (item.name?.contains(searchQuery, ignoreCase = true) == true) ||
+                                            item.number.contains(searchQuery)
+                                    val matchesCategory = when (pageIndex) {
+                                        1 -> item.dayMissedCount > 0
+                                        2 -> item.dayIncomingCount > 0
+                                        3 -> item.dayOutgoingCount > 0
+                                        4 -> item.hasRecording
+                                        else -> true
+                                    }
+                                    matchesSearch && matchesCategory
+                                }
+                                if (filtered.isNotEmpty()) {
+                                    map[dayKey] = filtered
                                 }
                             }
+                            map
+                        }
 
-                            items(logsInDay, key = { it.primaryId.toString() + "_" + it.number + "_" + it.latestTimestamp }) { group ->
-                                val (icon, tint) = when (group.latestCallType) {
-                                    CallType.INCOMING -> Pair(Icons.AutoMirrored.Filled.CallReceived, AccentGreen)
-                                    CallType.OUTGOING -> Pair(Icons.AutoMirrored.Filled.CallMade, Color(0xFF3B82F6))
-                                    CallType.MISSED -> Pair(Icons.AutoMirrored.Filled.CallMissed, AccentRed)
-                                    CallType.REJECTED -> Pair(Icons.Default.CallEnd, AccentRed)
-                                    CallType.BLOCKED -> Pair(Icons.Default.Block, Color.Gray)
+                        if (pageFilteredLogs.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(54.dp))
+                                    Spacer(Modifier.height(8.dp))
+                                    Text("No call history in this category", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                                 }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 2.dp)
+                            ) {
+                                pageFilteredLogs.forEach { (dayHeader, logsInDay) ->
+                                    item(key = "header_${pageIndex}_$dayHeader") {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.background,
+                                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = "$dayHeader (${logsInDay.size})",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
 
-                                val breakdownText = buildString {
-                                    val parts = mutableListOf<String>()
-                                    if (group.outgoingCount > 0) parts.add("${group.outgoingCount} Dialed")
-                                    if (group.incomingCount > 0) parts.add("${group.incomingCount} Received")
-                                    if (group.missedCount > 0) parts.add("${group.missedCount} Missed")
-                                    append(parts.joinToString(" • "))
-                                }
+                                    items(logsInDay, key = { it.primaryId.toString() + "_" + it.number + "_" + it.dayKey }) { group ->
+                                        val (icon, tint) = when (group.latestCallType) {
+                                            CallType.INCOMING -> Pair(Icons.AutoMirrored.Filled.CallReceived, AccentGreen)
+                                            CallType.OUTGOING -> Pair(Icons.AutoMirrored.Filled.CallMade, Color(0xFF3B82F6))
+                                            CallType.MISSED -> Pair(Icons.AutoMirrored.Filled.CallMissed, AccentRed)
+                                            CallType.REJECTED -> Pair(Icons.Default.CallEnd, AccentRed)
+                                            CallType.BLOCKED -> Pair(Icons.Default.Block, Color.Gray)
+                                        }
 
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 3.dp)
-                                        .clickable { selectedGroupForDetails = group },
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    shape = RoundedCornerShape(16.dp),
-                                    elevation = CardDefaults.cardElevation(2.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        ContactAvatar(
-                                            name = group.name ?: group.number,
-                                            photoUri = allContacts.find { it.name == group.name }?.photoUri,
-                                            size = 48.dp,
-                                            fontSize = 18.sp
-                                        )
-                                        Spacer(Modifier.width(12.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = group.name ?: group.number,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 16.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    color = if (group.missedCount > 0 && group.latestCallType == CallType.MISSED) AccentRed else MaterialTheme.colorScheme.onSurface
+                                        val breakdownText = buildString {
+                                            val parts = mutableListOf<String>()
+                                            if (group.dayOutgoingCount > 0) parts.add("${group.dayOutgoingCount} Dialed")
+                                            if (group.dayIncomingCount > 0) parts.add("${group.dayIncomingCount} Received")
+                                            if (group.dayMissedCount > 0) parts.add("${group.dayMissedCount} Missed")
+                                            append(parts.joinToString(" • "))
+                                        }
+
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 3.dp)
+                                                .clickable {
+                                                    val matchedPhoto = allContacts.find { it.name == group.name }?.photoUri
+                                                    onContactClick(group.name ?: group.number, group.number, matchedPhoto)
+                                                },
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                            shape = RoundedCornerShape(16.dp),
+                                            elevation = CardDefaults.cardElevation(2.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                ContactAvatar(
+                                                    name = group.name ?: group.number,
+                                                    photoUri = allContacts.find { it.name == group.name }?.photoUri,
+                                                    size = 48.dp,
+                                                    fontSize = 18.sp
                                                 )
-                                                if (group.totalCount > 1) {
-                                                    Spacer(Modifier.width(6.dp))
-                                                    Surface(
-                                                        shape = RoundedCornerShape(10.dp),
-                                                        color = MaterialTheme.colorScheme.surfaceVariant
-                                                    ) {
+                                                Spacer(Modifier.width(12.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Text(
-                                                            text = "(${group.totalCount})",
-                                                            fontSize = 12.sp,
+                                                            text = group.name ?: group.number,
                                                             fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-                                                            color = MaterialTheme.colorScheme.primary
+                                                            fontSize = 16.sp,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            color = if (group.dayMissedCount > 0 && group.latestCallType == CallType.MISSED) AccentRed else MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        if (group.dayTotalCount > 1) {
+                                                            Spacer(Modifier.width(6.dp))
+                                                            Surface(
+                                                                shape = RoundedCornerShape(10.dp),
+                                                                color = MaterialTheme.colorScheme.surfaceVariant
+                                                            ) {
+                                                                Text(
+                                                                    text = "(${group.dayTotalCount})",
+                                                                    fontSize = 12.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                                                    color = MaterialTheme.colorScheme.primary
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    Spacer(Modifier.height(2.dp))
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text(
+                                                            text = breakdownText,
+                                                            fontSize = 12.sp,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
                                                     }
                                                 }
+                                                IconButton(
+                                                    onClick = { onCallClick(group.number, 0) },
+                                                    modifier = Modifier
+                                                        .size(42.dp)
+                                                        .background(AccentGreen.copy(alpha = 0.15f), CircleShape)
+                                                ) {
+                                                    Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
+                                                }
                                             }
-                                            Spacer(Modifier.height(2.dp))
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
-                                                Spacer(Modifier.width(4.dp))
-                                                Text(
-                                                    text = breakdownText,
-                                                    fontSize = 12.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                        IconButton(
-                                            onClick = { onCallClick(group.number, 0) },
-                                            modifier = Modifier
-                                                .size(42.dp)
-                                                .background(AccentGreen.copy(alpha = 0.15f), CircleShape)
-                                        ) {
-                                            Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 }
@@ -451,24 +507,40 @@ fun DialerScreen(
             }
         }
 
-        // 4. Floating Open Keypad Button (FAB)
+        // 5. Dual Floating Action Buttons: Floating Search + Keypad Dialpad
         if (!isDialpadOpen) {
-            FloatingActionButton(
-                onClick = { isDialpadOpen = true },
-                containerColor = AccentGreen,
-                contentColor = Color.White,
-                shape = CircleShape,
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(20.dp)
-                    .size(64.dp)
-                    .shadow(12.dp, CircleShape)
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Dialpad, contentDescription = "Open Dialpad", modifier = Modifier.size(30.dp))
+                // Floating Search FAB
+                FloatingActionButton(
+                    onClick = { isSearchOpen = !isSearchOpen },
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape,
+                    modifier = Modifier.size(52.dp).shadow(6.dp, CircleShape)
+                ) {
+                    Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
+                }
+
+                // Keypad FAB
+                FloatingActionButton(
+                    onClick = { isDialpadOpen = true },
+                    containerColor = AccentGreen,
+                    contentColor = Color.White,
+                    shape = CircleShape,
+                    modifier = Modifier.size(64.dp).shadow(12.dp, CircleShape)
+                ) {
+                    Icon(Icons.Default.Dialpad, contentDescription = "Open Dialpad", modifier = Modifier.size(30.dp))
+                }
             }
         }
 
-        // 5. Slide-Up Keypad Sheet
+        // 6. Slide-Up Keypad Sheet
         AnimatedVisibility(
             visible = isDialpadOpen,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -582,70 +654,6 @@ fun DialerScreen(
                 }
             }
         }
-    }
-
-    // Consolidated Call Details Dialog
-    selectedGroupForDetails?.let { group ->
-        val fullDate = SimpleDateFormat("EEEE, dd MMMM yyyy, hh:mm:ss a", Locale.getDefault()).format(Date(group.latestTimestamp))
-        val totalMins = group.totalDuration / 60
-        val totalSecs = group.totalDuration % 60
-        val totalDurText = if (totalMins > 0) "${totalMins}m ${totalSecs}s" else "${totalSecs}s"
-
-        AlertDialog(
-            onDismissRequest = { selectedGroupForDetails = null },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ContactAvatar(name = group.name ?: group.number, size = 50.dp, fontSize = 20.sp)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(group.name ?: group.number, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Text(group.number, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            },
-            text = {
-                Column(modifier = Modifier.padding(top = 8.dp)) {
-                    Text("Total Calls: ${group.totalCount}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Spacer(Modifier.height(4.dp))
-                    Text("Breakdown: ${group.outgoingCount} Dialed • ${group.incomingCount} Received • ${group.missedCount} Missed", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(4.dp))
-                    Text("Latest Call: $fullDate", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(4.dp))
-                    Text("Total Duration: $totalDurText", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        selectedGroupForDetails = null
-                        onCallClick(group.number, 0)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
-                ) {
-                    Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Call")
-                }
-            },
-            dismissButton = {
-                Row {
-                    OutlinedButton(onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Phone Number", group.number))
-                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Text("Copy")
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    OutlinedButton(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("sms:${group.number}")))
-                        selectedGroupForDetails = null
-                    }) {
-                        Text("SMS")
-                    }
-                }
-            }
-        )
     }
 }
 

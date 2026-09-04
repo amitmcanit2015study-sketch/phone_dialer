@@ -1,11 +1,11 @@
 package com.amitbharat.phonedialer.ui.contacts
 
-import android.content.Intent
-import android.net.Uri
+import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,8 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,9 +30,11 @@ fun ContactsScreen(
     onToggleFavorite: (Contact) -> Unit,
     onDeleteContact: (Contact) -> Unit,
     onSyncDeviceContacts: () -> Unit,
+    onContactClick: (name: String, number: String, photoUri: String?, contact: Contact) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var isSearchOpen by remember { mutableStateOf(false) }
     var showAddScreen by remember { mutableStateOf(false) }
     var editingContact by remember { mutableStateOf<Contact?>(null) }
 
@@ -61,12 +63,28 @@ fun ContactsScreen(
         Scaffold(
             modifier = modifier.fillMaxSize(),
             floatingActionButton = {
-                FloatingActionButton(
-                    onClick = { showAddScreen = true },
-                    containerColor = AccentGreen,
-                    contentColor = Color.White
-                ) {
-                    Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact")
+                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    // Floating Search FAB at Bottom Left
+                    FloatingActionButton(
+                        onClick = { isSearchOpen = !isSearchOpen },
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        shape = CircleShape,
+                        modifier = Modifier.align(Alignment.BottomStart).size(52.dp).shadow(6.dp, CircleShape)
+                    ) {
+                        Icon(if (isSearchOpen) Icons.Default.Close else Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(24.dp))
+                    }
+
+                    // Add Contact FAB at Bottom Right
+                    FloatingActionButton(
+                        onClick = { showAddScreen = true },
+                        containerColor = AccentGreen,
+                        contentColor = Color.White,
+                        shape = CircleShape,
+                        modifier = Modifier.align(Alignment.BottomEnd).size(64.dp).shadow(12.dp, CircleShape)
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Add Contact", modifier = Modifier.size(30.dp))
+                    }
                 }
             }
         ) { innerPadding ->
@@ -74,9 +92,9 @@ fun ContactsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 2.dp)
             ) {
-                // Header with Contact Count
+                // Header with Count
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -95,25 +113,25 @@ fun ContactsScreen(
                     }
                 }
 
-                // Search Bar
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search contacts…") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                // Expandable Search Field
+                AnimatedVisibility(visible = isSearchOpen) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search contacts…") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                }
                             }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    singleLine = true
-                )
-
-                Spacer(Modifier.height(8.dp))
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        singleLine = true
+                    )
+                }
 
                 if (filteredContacts.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -132,8 +150,7 @@ fun ContactsScreen(
                                 contact = contact,
                                 onCallClick = { onCallClick(contact.numbers.firstOrNull() ?: "") },
                                 onToggleFavorite = { onToggleFavorite(contact) },
-                                onDeleteContact = { onDeleteContact(contact) },
-                                onEditContact = { editingContact = contact }
+                                onContactClick = { onContactClick(contact.name, contact.numbers.firstOrNull() ?: "", contact.photoUri, contact) }
                             )
                         }
                     }
@@ -148,17 +165,13 @@ fun ContactItemRow(
     contact: Contact,
     onCallClick: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onDeleteContact: () -> Unit,
-    onEditContact: () -> Unit
+    onContactClick: () -> Unit
 ) {
-    val context = LocalContext.current
-    var showSheet by remember { mutableStateOf(false) }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
-            .clickable { showSheet = true },
+            .clickable { onContactClick() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -190,62 +203,5 @@ fun ContactItemRow(
                 Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen)
             }
         }
-    }
-
-    if (showSheet) {
-        AlertDialog(
-            onDismissRequest = { showSheet = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ContactAvatar(name = contact.name, photoUri = contact.photoUri, size = 52.dp, fontSize = 20.sp)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Text(contact.numbers.firstOrNull() ?: "", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            },
-            text = {
-                Column {
-                    contact.numbers.forEach { num ->
-                        Text("Phone: $num", fontSize = 15.sp, modifier = Modifier.padding(vertical = 2.dp))
-                    }
-                    if (!contact.email.isNullOrBlank()) {
-                        Text("Email: ${contact.email}", fontSize = 14.sp, modifier = Modifier.padding(vertical = 2.dp))
-                    }
-                    if (!contact.company.isNullOrBlank()) {
-                        Text("Company: ${contact.company}", fontSize = 14.sp, modifier = Modifier.padding(vertical = 2.dp))
-                    }
-                    if (!contact.notes.isNullOrBlank()) {
-                        Text("Notes: ${contact.notes}", fontSize = 14.sp, modifier = Modifier.padding(vertical = 2.dp))
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showSheet = false
-                    onCallClick()
-                }, colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)) {
-                    Text("Call")
-                }
-            },
-            dismissButton = {
-                Row {
-                    OutlinedButton(onClick = {
-                        showSheet = false
-                        onEditContact()
-                    }) {
-                        Text("Edit")
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    OutlinedButton(onClick = {
-                        showSheet = false
-                        onDeleteContact()
-                    }) {
-                        Text("Delete")
-                    }
-                }
-            }
-        )
     }
 }

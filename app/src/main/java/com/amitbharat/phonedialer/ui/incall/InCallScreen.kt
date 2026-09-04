@@ -2,8 +2,10 @@ package com.amitbharat.phonedialer.ui.incall
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.telecom.Call
+import android.telephony.SmsManager
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,6 +38,7 @@ import com.amitbharat.phonedialer.ui.theme.AccentGreen
 import com.amitbharat.phonedialer.ui.theme.AccentRed
 import com.amitbharat.phonedialer.ui.theme.PhoneDialerTheme
 import com.amitbharat.phonedialer.utils.ContactAvatar
+import com.amitbharat.phonedialer.utils.PreferencesManager
 
 class InCallActivity : ComponentActivity() {
 
@@ -52,6 +56,7 @@ class InCallActivity : ComponentActivity() {
         )
 
         callRecorder = CallRecorder(this)
+        val prefs = PreferencesManager.getInstance(this)
 
         setContent {
             val callState by CallManager.callState.collectAsState()
@@ -62,6 +67,9 @@ class InCallActivity : ComponentActivity() {
                         callRecorder.stopRecording()
                     }
                     finish()
+                } else if (callState.callState == Call.STATE_ACTIVE && prefs.isAutoCallRecordingEnabled() && !callRecorder.isRecording) {
+                    val ok = callRecorder.startRecording(callState.number)
+                    if (ok) CallManager.toggleRecording(true)
                 }
             }
 
@@ -83,7 +91,24 @@ class InCallActivity : ComponentActivity() {
                             if (ok) CallManager.toggleRecording(true)
                         }
                     },
-                    onDtmf = { CallManager.sendDtmfTone(it) }
+                    onDtmf = { CallManager.sendDtmfTone(it) },
+                    onSendQuickSms = { msg ->
+                        try {
+                            val sms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                getSystemService(SmsManager::class.java)
+                            } else {
+                                @Suppress("DEPRECATION") SmsManager.getDefault()
+                            }
+                            sms?.sendTextMessage(callState.number, null, msg, null, null)
+                            Toast.makeText(this@InCallActivity, "Quick SMS sent", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("sms:${callState.number}")).apply {
+                                putExtra("sms_body", msg)
+                            }
+                            startActivity(intent)
+                        }
+                        CallManager.rejectCall()
+                    }
                 )
             }
         }
@@ -100,13 +125,14 @@ fun InCallScreen(
     onSpeakerToggle: () -> Unit,
     onHoldToggle: () -> Unit,
     onRecordToggle: () -> Unit,
-    onDtmf: (Char) -> Unit
+    onDtmf: (Char) -> Unit,
+    onSendQuickSms: (String) -> Unit
 ) {
     val context = LocalContext.current
     val isIncomingRinging = state.callState == Call.STATE_RINGING
     var isKeypadOpen by remember { mutableStateOf(false) }
-    var inCallNote by remember { mutableStateOf("") }
-    var isNotesOpen by remember { mutableStateOf(false) }
+    var isQuickSmsOpen by remember { mutableStateOf(false) }
+    var customSmsText by remember { mutableStateOf("") }
 
     val durationText = remember(state.callDurationSeconds) {
         val mins = state.callDurationSeconds / 60
@@ -115,31 +141,39 @@ fun InCallScreen(
     }
 
     val stateText = when (state.callState) {
-        Call.STATE_RINGING -> "Incoming Call…"
-        Call.STATE_DIALING, Call.STATE_CONNECTING -> "Calling…"
+        Call.STATE_RINGING -> "Incoming Callâ€¦"
+        Call.STATE_DIALING, Call.STATE_CONNECTING -> "Callingâ€¦"
         Call.STATE_ACTIVE -> durationText
-        Call.STATE_HOLDING -> "On Hold ()"
+        Call.STATE_HOLDING -> "On Hold"
         Call.STATE_DISCONNECTED -> "Call Ended"
-        else -> "Calling…"
+        else -> "Callingâ€¦"
     }
+
+    val displayName = state.callerName ?: state.number
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF131824), Color(0xFF0A0D14), Color(0xFF05070B))
+                    colors = listOf(
+                        Color(0xFF0F172A),
+                        Color(0xFF090D16),
+                        Color(0xFF030508)
+                    )
                 )
             )
-            .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
+        // Main Caller Content Layer
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(32.dp))
 
-            // 1. Top Carrier & SIM Badge
+            // SIM Badge
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = Color(0xFF1E293B).copy(alpha = 0.85f),
@@ -152,7 +186,7 @@ fun InCallScreen(
                     Icon(Icons.Default.SignalCellularAlt, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Jio 5G • HD Voice",
+                        text = "Jio 5G â€¢ HD Voice",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White.copy(alpha = 0.9f)
@@ -160,10 +194,10 @@ fun InCallScreen(
                 }
             }
 
-            // 2. Caller Name & Details
+            // Caller Name & Details
             Text(
-                text = state.callerName ?: state.number,
-                fontSize = 28.sp,
+                text = displayName,
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 textAlign = TextAlign.Center,
@@ -171,58 +205,71 @@ fun InCallScreen(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Mobile ",
-                fontSize = 15.sp,
+                text = state.number,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.7f)
+                color = Color.White.copy(alpha = 0.8f)
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = stateText,
-                fontSize = 18.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (state.callState == Call.STATE_ACTIVE) AccentGreen else Color(0xFF94A3B8)
+                color = if (state.callState == Call.STATE_ACTIVE) AccentGreen else Color(0xFF38BDF8)
             )
 
-            // Live Call Recording Badge
+            // Live Call Recording Indicator
             if (state.isRecording) {
                 Spacer(Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(AccentRed.copy(alpha = 0.2f))
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        .background(AccentRed.copy(alpha = 0.3f))
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("?? REC Live Audio", color = AccentRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.FiberManualRecord, contentDescription = null, tint = AccentRed, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Recording Call", color = AccentRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
             Spacer(Modifier.height(28.dp))
 
-            // 3. Large Contact Photo / Avatar
+            // Contact Photo / Large Initials Hero Avatar
             ContactAvatar(
-                name = state.callerName ?: state.number,
+                name = displayName,
                 photoUri = state.photoUri,
-                size = 136.dp,
-                fontSize = 48.sp
+                size = 150.dp,
+                fontSize = 54.sp
             )
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 4. In-Call Action Control Panel
+            // Action Control Panel
             if (isIncomingRinging) {
-                // Incoming Call: Swipe/Tap Accept or Decline + Quick SMS
+                // Incoming Call: Quick Response SMS + Accept / Decline
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Quick Message Trigger
+                    OutlinedButton(
+                        onClick = { isQuickSmsOpen = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.padding(bottom = 24.dp)
+                    ) {
+                        Icon(Icons.Default.Message, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Quick SMS Response")
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Decline Button
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             IconButton(
                                 onClick = onReject,
@@ -231,10 +278,9 @@ fun InCallScreen(
                                 Icon(Icons.Default.CallEnd, contentDescription = "Decline", tint = Color.White, modifier = Modifier.size(38.dp))
                             }
                             Spacer(Modifier.height(8.dp))
-                            Text("Decline", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                            Text("Decline", color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
 
-                        // Accept Button
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             IconButton(
                                 onClick = onAnswer,
@@ -243,22 +289,21 @@ fun InCallScreen(
                                 Icon(Icons.Default.Call, contentDescription = "Answer", tint = Color.White, modifier = Modifier.size(38.dp))
                             }
                             Spacer(Modifier.height(8.dp))
-                            Text("Answer", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                            Text("Answer", color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
             } else {
-                // Active / Outgoing In-Call Panel
+                // Active / Outgoing In-Call Grid
                 Card(
                     shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131B2A).copy(alpha = 0.95f)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.92f)),
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(vertical = 16.dp, horizontal = 12.dp),
+                        modifier = Modifier.padding(vertical = 18.dp, horizontal = 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // 6 Buttons in 2 Rows
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly
@@ -302,16 +347,15 @@ fun InCallScreen(
                                 onClick = onRecordToggle
                             )
                             InCallBtn(
-                                icon = Icons.Default.EditNote,
-                                label = "Notes",
-                                isActive = isNotesOpen,
-                                onClick = { isNotesOpen = !isNotesOpen }
+                                icon = Icons.Default.Sms,
+                                label = "Quick SMS",
+                                isActive = isQuickSmsOpen,
+                                onClick = { isQuickSmsOpen = true }
                             )
                         }
 
                         Spacer(Modifier.height(20.dp))
 
-                        // Large Ergonomic End Call Pill Button
                         Button(
                             onClick = onEndCall,
                             colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
@@ -329,7 +373,93 @@ fun InCallScreen(
             }
         }
 
-        // In-Call DTMF Keypad Overlay
+        // Quick Response Sheet Overlay
+        AnimatedVisibility(
+            visible = isQuickSmsOpen,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Card(
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Quick SMS Response", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        IconButton(onClick = { isQuickSmsOpen = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+
+                    listOf(
+                        "Can't talk right now. What's up?",
+                        "I'll call you back later.",
+                        "On my way, call you soon.",
+                        "In a meeting, will message you."
+                    ).forEach { preset ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFF1E293B),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable {
+                                    onSendQuickSms(preset)
+                                    isQuickSmsOpen = false
+                                }
+                        ) {
+                            Text(
+                                text = preset,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = customSmsText,
+                            onValueChange = { customSmsText = it },
+                            placeholder = { Text("Custom messageâ€¦", color = Color.Gray) },
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(
+                            onClick = {
+                                if (customSmsText.isNotBlank()) {
+                                    onSendQuickSms(customSmsText)
+                                    isQuickSmsOpen = false
+                                }
+                            },
+                            modifier = Modifier.size(46.dp).background(AccentGreen, CircleShape)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        // DTMF Keypad Overlay
         AnimatedVisibility(
             visible = isKeypadOpen,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
