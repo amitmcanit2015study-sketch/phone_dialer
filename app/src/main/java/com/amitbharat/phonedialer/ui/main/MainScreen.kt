@@ -42,88 +42,123 @@ fun MainScreen(
     onThemeChange: (ThemeMode) -> Unit
 ) {
     var currentTab by remember { mutableStateOf(MainTab.DIALER) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showAboutScreen by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = when (currentTab) {
-                                MainTab.DIALER -> "Phone Dialer"
-                                MainTab.CONTACTS -> "Contacts"
-                                MainTab.FAVORITES -> "Favorites"
-                                MainTab.SETTINGS -> "Settings"
-                            },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )
-                        Text(
-                            text = "by Amit Bharat",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+    if (showAboutScreen) {
+        com.amitbharat.phonedialer.ui.settings.AboutScreen(
+            onBack = { showAboutScreen = false }
+        )
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = when (currentTab) {
+                                    MainTab.DIALER -> "Phone Dialer"
+                                    MainTab.CONTACTS -> "Contacts"
+                                    MainTab.FAVORITES -> "Favorites"
+                                    MainTab.SETTINGS -> "Settings"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            )
+                            Text(
+                                text = "by Amit Bharat",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { showOverflowMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More Options")
+                        }
+                        DropdownMenu(
+                            expanded = showOverflowMenu,
+                            onDismissRequest = { showOverflowMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Settings") },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    currentTab = MainTab.SETTINGS
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(androidx.compose.ui.res.stringResource(com.amitbharat.phonedialer.R.string.action_about)) },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showAboutScreen = true
+                                }
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
-        },
-        bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                NavigationBarItem(
-                    selected = currentTab == MainTab.DIALER,
-                    onClick = { currentTab = MainTab.DIALER },
-                    icon = { Icon(Icons.Default.Call, contentDescription = "Dialer") },
-                    label = { Text("Dialer", fontSize = 12.sp) }
-                )
-                NavigationBarItem(
-                    selected = currentTab == MainTab.CONTACTS,
-                    onClick = { currentTab = MainTab.CONTACTS },
-                    icon = { Icon(Icons.Default.People, contentDescription = "Contacts") },
-                    label = { Text("Contacts", fontSize = 12.sp) }
-                )
-                NavigationBarItem(
-                    selected = currentTab == MainTab.FAVORITES,
-                    onClick = { currentTab = MainTab.FAVORITES },
-                    icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
-                    label = { Text("Favorites", fontSize = 12.sp) }
-                )
-                NavigationBarItem(
-                    selected = currentTab == MainTab.SETTINGS,
-                    onClick = { currentTab = MainTab.SETTINGS },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings", fontSize = 12.sp) }
-                )
+            },
+            bottomBar = {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    NavigationBarItem(
+                        selected = currentTab == MainTab.DIALER,
+                        onClick = { currentTab = MainTab.DIALER },
+                        icon = { Icon(Icons.Default.Call, contentDescription = "Dialer") },
+                        label = { Text("Dialer", fontSize = 12.sp) }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == MainTab.CONTACTS,
+                        onClick = { currentTab = MainTab.CONTACTS },
+                        icon = { Icon(Icons.Default.People, contentDescription = "Contacts") },
+                        label = { Text("Contacts", fontSize = 12.sp) }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == MainTab.FAVORITES,
+                        onClick = { currentTab = MainTab.FAVORITES },
+                        icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
+                        label = { Text("Favorites", fontSize = 12.sp) }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == MainTab.SETTINGS,
+                        onClick = { currentTab = MainTab.SETTINGS },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                        label = { Text("Settings", fontSize = 12.sp) }
+                    )
+                }
             }
-        }
-    ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            when (currentTab) {
-                MainTab.DIALER -> DialerScreen(
-                    allContacts = contacts,
-                    favorites = favorites,
-                    callLogs = callLogs,
-                    speedDials = speedDials,
-                    onCallClick = onCallClick,
-                    onDeleteCallLog = onDeleteCallLog
-                )
-                MainTab.CONTACTS -> ContactsScreen(
-                    contacts = contacts,
-                    onCallClick = { num -> onCallClick(num, 0) },
-                    onAddContact = onAddContact,
-                    onToggleFavorite = onToggleFavorite,
-                    onDeleteContact = onDeleteContact,
-                    onSyncDeviceContacts = onSyncDeviceContacts
-                )
-                MainTab.FAVORITES -> FavoritesScreen(
-                    favorites = favorites,
-                    onCallClick = { num -> onCallClick(num, 0) }
-                )
-                MainTab.SETTINGS -> SettingsScreen(
-                    onThemeChange = onThemeChange
-                )
+        ) { innerPadding ->
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                when (currentTab) {
+                    MainTab.DIALER -> DialerScreen(
+                        allContacts = contacts,
+                        favorites = favorites,
+                        callLogs = callLogs,
+                        speedDials = speedDials,
+                        onCallClick = onCallClick,
+                        onDeleteCallLog = onDeleteCallLog
+                    )
+                    MainTab.CONTACTS -> ContactsScreen(
+                        contacts = contacts,
+                        onCallClick = { num -> onCallClick(num, 0) },
+                        onAddContact = onAddContact,
+                        onToggleFavorite = onToggleFavorite,
+                        onDeleteContact = onDeleteContact,
+                        onSyncDeviceContacts = onSyncDeviceContacts
+                    )
+                    MainTab.FAVORITES -> FavoritesScreen(
+                        favorites = favorites,
+                        onCallClick = { num -> onCallClick(num, 0) }
+                    )
+                    MainTab.SETTINGS -> SettingsScreen(
+                        onThemeChange = onThemeChange,
+                        onOpenAbout = { showAboutScreen = true }
+                    )
+                }
             }
         }
     }

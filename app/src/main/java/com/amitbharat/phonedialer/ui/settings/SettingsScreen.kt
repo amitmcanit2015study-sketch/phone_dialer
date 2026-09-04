@@ -3,62 +3,72 @@ package com.amitbharat.phonedialer.ui.settings
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.telecom.TelecomManager
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amitbharat.phonedialer.R
 import com.amitbharat.phonedialer.utils.PreferencesManager
 import com.amitbharat.phonedialer.utils.ThemeMode
-import java.io.File
 
 @Composable
 fun SettingsScreen(
     onThemeChange: (ThemeMode) -> Unit,
-    modifier: Modifier = Modifier
+    onOpenAbout: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val prefs = remember { PreferencesManager.getInstance(context) }
-    var currentTheme by remember { mutableStateOf(prefs.getThemeMode()) }
+
     var isAutoRecordAll by remember { mutableStateOf(prefs.isAutoCallRecordingEnabled()) }
     var isVibration by remember { mutableStateOf(prefs.isVibrationEnabled()) }
     var isSound by remember { mutableStateOf(prefs.isDialpadSoundEnabled()) }
-    var showAboutDialog by remember { mutableStateOf(false) }
+    var currentTheme by remember { mutableStateOf(prefs.getThemeMode()) }
 
     fun requestDefaultDialer() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
-            roleManager?.createRequestRoleIntent(RoleManager.ROLE_DIALER)?.let {
-                context.startActivity(it)
+            if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                try {
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Could not open default dialer prompt", Toast.LENGTH_SHORT).show()
+                }
             }
         } else {
             val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
                 putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
             }
-            context.startActivity(intent)
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Could not open default dialer prompt", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Default Phone App Setup Card
+        // 1. Default Dialer Card
         item {
             Card(
                 shape = RoundedCornerShape(16.dp),
@@ -67,20 +77,20 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Default Phone App",
+                        text = stringResource(R.string.set_default_dialer_title),
                         fontWeight = FontWeight.Bold,
                         fontSize = 17.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Enable Phone Dialer as your default calling app to unlock full-screen in-call alerts, call recording, and seamless phone management.",
+                        text = stringResource(R.string.set_default_dialer_desc),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                     )
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = { requestDefaultDialer() }) {
-                        Text("Set as Default")
+                        Text(stringResource(R.string.btn_set_default))
                     }
                 }
             }
@@ -90,10 +100,12 @@ fun SettingsScreen(
         item {
             Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("??? Call Recording", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("🎙️ Call Recording", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.height(8.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -118,10 +130,12 @@ fun SettingsScreen(
         item {
             Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("?? Sound & Haptics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("🔔 Sound & Haptics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.height(8.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -133,7 +147,9 @@ fun SettingsScreen(
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -151,7 +167,7 @@ fun SettingsScreen(
         item {
             Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("?? Appearance & Themes", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("🎨 Appearance & Themes", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.height(10.dp))
                     listOf(
                         ThemeMode.SYSTEM to "System Default",
@@ -187,44 +203,25 @@ fun SettingsScreen(
         item {
             Card(
                 shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth().clickable { showAboutDialog = true }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenAbout?.invoke() }
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("About Phone Dialer", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                        Text("Developed by Amit Bharat � v1.0.0.1", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.action_about), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Text("Developer: Amit Bharat   v1.0.1", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.Default.ChevronRight, contentDescription = null)
                 }
             }
         }
-    }
-
-    if (showAboutDialog) {
-        AlertDialog(
-            onDismissRequest = { showAboutDialog = false },
-            title = { Text("Phone Dialer", fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Developer: Amit Bharat", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    Text("Company: Rooys Soft Tech", fontSize = 14.sp)
-                    Text("Email: rooyssofttech2020@gmail.com", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Version: v1.0.0.1 (Production Build)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
-                    Text("A modern, fast, and secure phone dialer featuring smart T9 search, contact management, speed dial, and call recording.", fontSize = 13.sp)
-                }
-            },
-            confirmButton = {
-                Button(onClick = { showAboutDialog = false }) {
-                    Text("Close")
-                }
-            }
-        )
     }
 }

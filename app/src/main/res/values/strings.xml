@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Phone Dialer</string>
     <string name="app_header_subtitle">by Amit Bharat</string>
@@ -21,5 +21,8 @@
     <string name="set_default_dialer_title">Set as Default Phone App</string>
     <string name="set_default_dialer_desc">To manage calls, incoming alerts, and call recording, enable Phone Dialer as your default calling app.</string>
     <string name="btn_set_default">Set as Default</string>
+    <string name="developed_by_full">Developer: Amit Bharat</string>
+    <string name="company_name_full">Company: Rooys Soft Tech</string>
+    <string name="about_footer">100% Offline • No Ads • Zero Tracking</string>
     <string name="about_description">Phone Dialer is a modern, fast, and secure Android phone application designed for effortless calling, smart T9 search, contact management, speed dial, call history, and call recording.</string>
 </resources>

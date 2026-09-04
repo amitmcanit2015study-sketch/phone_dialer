@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">फोन डायलर</string>
     <string name="app_header_subtitle">द्वारा अमित भारत</string>
@@ -21,5 +21,8 @@
     <string name="set_default_dialer_title">डिफ़ॉल्ट फोन ऐप बनाएं</string>
     <string name="set_default_dialer_desc">कॉल प्रबंधित करने, इनकमिंग अलर्ट और कॉल रिकॉर्डिंग के लिए फोन डायलर को डिफ़ॉल्ट ऐप बनाएं।</string>
     <string name="btn_set_default">डिफ़ॉल्ट बनाएं</string>
+    <string name="developed_by_full">डेवलपर: अमित भारत</string>
+    <string name="company_name_full">कंपनी: रूय्स सॉफ्ट टेक</string>
+    <string name="about_footer">100% ऑफलाइन • विज्ञापन-मुक्त • कोई ट्रैकिंग नहीं</string>
     <string name="about_description">फोन डायलर एक तेज़, सुरक्षित और आधुनिक कॉलिंग ऐप है जो स्मार्ट T9 सर्च, संपर्क प्रबंधन, स्पीड डायल और कॉल रिकॉर्डिंग प्रदान करता है।</string>
 </resources>

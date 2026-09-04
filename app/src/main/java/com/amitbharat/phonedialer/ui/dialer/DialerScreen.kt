@@ -176,7 +176,7 @@ fun DialerScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search name, number or calls…") },
+                placeholder = { Text("Search name, number or callsÂ…") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -307,14 +307,14 @@ fun DialerScreen(
                             }
                         }
 
-                        // Summary breakdown: e.g. "4 Dialed • 3 Received • 1 Missed"
+                        // Summary breakdown: e.g. "4 Dialed Â• 3 Received Â• 1 Missed"
                         val breakdownText = buildString {
                             val parts = mutableListOf<String>()
                             if (group.outgoingCount > 0) parts.add(" Dialed")
                             if (group.incomingCount > 0) parts.add(" Received")
                             if (group.missedCount > 0) parts.add(" Missed")
-                            append(parts.joinToString(" • "))
-                            append(" • ")
+                            append(parts.joinToString(" Â• "))
+                            append(" Â• ")
                         }
 
                         Card(
@@ -583,7 +583,7 @@ fun DialerScreen(
                 Column(modifier = Modifier.padding(top = 8.dp)) {
                     Text("Total Calls: ", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text("Breakdown:  Dialed •  Received •  Missed", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Breakdown:  Dialed Â•  Received Â•  Missed", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(4.dp))
                     Text("Latest Call: ", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(4.dp))
