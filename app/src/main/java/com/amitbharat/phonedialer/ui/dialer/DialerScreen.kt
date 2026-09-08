@@ -420,26 +420,87 @@ fun DialerScreen(
                                 contentPadding = PaddingValues(bottom = if (isSearchOpen) 150.dp else 100.dp)
                             ) {
                                 pageFilteredLogs.forEach { (dayHeader, logsInDay) ->
-                                    // Section Header Count specific to the selected tab!
-                                    val headerCount = when (pageIndex) {
-                                        1 -> logsInDay.sumOf { it.dayMissedCount }
-                                        2 -> logsInDay.sumOf { it.dayIncomingCount }
-                                        3 -> logsInDay.sumOf { it.dayOutgoingCount }
-                                        4 -> logsInDay.count { it.hasRecording }
-                                        else -> logsInDay.sumOf { it.dayTotalCount }
-                                    }
+                                    val dayTotal = logsInDay.sumOf { it.dayTotalCount }
+                                    val dayMissed = logsInDay.sumOf { it.dayMissedCount }
+                                    val dayIncoming = logsInDay.sumOf { it.dayIncomingCount }
+                                    val dayOutgoing = logsInDay.sumOf { it.dayOutgoingCount }
 
                                     item(key = "header_${pageIndex}_$dayHeader") {
                                         Surface(
                                             color = MaterialTheme.colorScheme.background,
-                                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp, start = 4.dp)
+                                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp, start = 4.dp, end = 4.dp)
                                         ) {
-                                            Text(
-                                                text = "$dayHeader ($headerCount)",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = dayHeader,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    if (dayMissed > 0) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            color = AccentRed.copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                text = "Missed: $dayMissed",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = AccentRed,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    if (dayIncoming > 0) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            color = AccentGreen.copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                text = "Recv: $dayIncoming",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = AccentGreen,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    if (dayOutgoing > 0) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                text = "Dialed: $dayOutgoing",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = MaterialTheme.colorScheme.primary,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    Surface(
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                                    ) {
+                                                        Text(
+                                                            text = "Total: $dayTotal",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 

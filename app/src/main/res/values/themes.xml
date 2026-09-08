@@ -15,7 +15,7 @@
     </style>
 
     <style name="Theme.PhoneDialer.InCall" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="android:colorBackground">#0B0F19</item>
+        <item name="android:colorBackground">#111216</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>

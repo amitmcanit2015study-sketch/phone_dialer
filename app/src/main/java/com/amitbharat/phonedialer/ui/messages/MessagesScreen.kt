@@ -86,8 +86,10 @@ fun MessagesScreen(
         return if (digits.length >= 10) digits.takeLast(10) else digits
     }
 
+    var syncTrigger by remember { mutableStateOf(0) }
+
     // Fetch and aggregate ALL SMS Messages grouped strictly by Normalized Phone Number off the UI thread
-    val threads by produceState<List<MessageThread>>(initialValue = emptyList(), key1 = contacts) {
+    val threads by produceState<List<MessageThread>>(initialValue = emptyList(), key1 = contacts, key2 = syncTrigger) {
         value = withContext(Dispatchers.IO) {
             val list = mutableListOf<MessageThread>()
             try {
@@ -212,7 +214,8 @@ fun MessagesScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 4.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         text = "Messages (${threads.size})",
@@ -220,6 +223,18 @@ fun MessagesScreen(
                         fontSize = 15.sp,
                         color = MaterialTheme.colorScheme.primary
                     )
+                    FilledTonalButton(
+                        onClick = {
+                            syncTrigger++
+                            Toast.makeText(context, "Syncing SMS messages…", Toast.LENGTH_SHORT).show()
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Sync", modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Sync SMS", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 if (filteredThreads.isEmpty()) {

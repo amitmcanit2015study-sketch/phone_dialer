@@ -173,15 +173,30 @@ class CallLogRepository(private val context: Context) {
     private fun getRecordingsMap(): Map<String, String> {
         val map = HashMap<String, String>()
         try {
-            val recordDir = File(context.getExternalFilesDir(null), "Recordings")
-            if (recordDir.exists() && recordDir.isDirectory) {
-                recordDir.listFiles()?.forEach { file ->
-                    val name = file.name
-                    if (name.startsWith("REC_") && (name.endsWith(".m4a") || name.endsWith(".aac"))) {
-                        val parts = name.split("_")
-                        if (parts.size >= 2) {
-                            val cleanNum = parts[1]
-                            map[cleanNum] = file.absolutePath
+            val candidateDirs = listOf(
+                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_RECORDINGS), "CallRecordings"),
+                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC), "CallRecordings"),
+                File(context.getExternalFilesDir(null), "CallRecordings"),
+                File(context.getExternalFilesDir(null), "Recordings")
+            )
+
+            candidateDirs.forEach { dir ->
+                if (dir.exists() && dir.isDirectory) {
+                    dir.listFiles()?.forEach { file ->
+                        val name = file.name
+                        if ((name.startsWith("Call_") || name.startsWith("REC_")) &&
+                            (name.endsWith(".m4a") || name.endsWith(".aac") || name.endsWith(".mp3") || name.endsWith(".mp4"))
+                        ) {
+                            val parts = name.split("_")
+                            for (part in parts) {
+                                val clean = part.replace(Regex("[^0-9+]"), "")
+                                if (clean.length >= 6) {
+                                    map[clean] = file.absolutePath
+                                    if (clean.length >= 10) {
+                                        map[clean.takeLast(10)] = file.absolutePath
+                                    }
+                                }
+                            }
                         }
                     }
                 }

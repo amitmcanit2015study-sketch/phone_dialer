@@ -91,7 +91,7 @@ class InCallActivity : ComponentActivity() {
                     }
                     finish()
                 } else if (callState.callState == Call.STATE_ACTIVE && prefs.isAutoCallRecordingEnabled() && !callRecorder.isRecording) {
-                    val ok = callRecorder.startRecording(callState.number)
+                    val ok = callRecorder.startRecording(callState.number, callState.callerName)
                     if (ok) CallManager.toggleRecording(true)
                 }
             }
@@ -143,7 +143,7 @@ class InCallActivity : ComponentActivity() {
                                 }
                             }
                         } else {
-                            val ok = callRecorder.startRecording(callState.number)
+                            val ok = callRecorder.startRecording(callState.number, callState.callerName)
                             if (ok) CallManager.toggleRecording(true)
                         }
                     },
