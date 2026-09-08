@@ -87,17 +87,29 @@ fun ContactDetailsScreen(
                     }
                 },
                 actions = {
-                    if (contact != null && onToggleFavorite != null) {
-                        IconButton(onClick = { onToggleFavorite(contact) }) {
+                    if (onToggleFavorite != null) {
+                        val isFav = contact?.isFavorite ?: false
+                        IconButton(onClick = {
+                            val c = contact ?: Contact(name = name, numbers = listOf(number), photoUri = photoUri, isFavorite = false)
+                            onToggleFavorite(c)
+                        }) {
                             Icon(
-                                if (contact.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                if (isFav) Icons.Default.Star else Icons.Default.StarBorder,
                                 contentDescription = "Favorite",
-                                tint = if (contact.isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurface
+                                tint = if (isFav) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
-                    if (contact != null && onEditContact != null) {
-                        IconButton(onClick = { onEditContact(contact) }) {
+                    if (onEditContact != null) {
+                        IconButton(onClick = {
+                            val contactToEdit = contact ?: Contact(
+                                id = 0L,
+                                name = if (name != number) name else "",
+                                numbers = listOf(number),
+                                photoUri = photoUri
+                            )
+                            onEditContact(contactToEdit)
+                        }) {
                             Icon(Icons.Default.Edit, contentDescription = "Edit Contact")
                         }
                     }
@@ -214,6 +226,33 @@ fun ContactDetailsScreen(
                                 Spacer(Modifier.height(4.dp))
                                 Text("Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        FilledTonalButton(
+                            onClick = {
+                                val contactToEdit = contact ?: Contact(
+                                    id = 0L,
+                                    name = if (name != number) name else "",
+                                    numbers = listOf(number),
+                                    photoUri = photoUri
+                                )
+                                onEditContact?.invoke(contactToEdit)
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
+                        ) {
+                            Icon(
+                                if (contact != null) Icons.Default.Edit else Icons.Default.PersonAdd,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (contact != null) "Edit Contact Details" else "Save as New Contact",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
                         }
                     }
                 }

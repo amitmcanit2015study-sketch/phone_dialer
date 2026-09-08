@@ -24,6 +24,17 @@ class CallLogRepository(private val context: Context) {
     private val callLogDao = db.callLogDao()
     private val speedDialDao = db.speedDialDao()
 
+    companion object {
+        @Volatile
+        private var cachedCallLogs: List<CallLogItem>? = null
+        @Volatile
+        private var lastLogFetchTime: Long = 0L
+
+        fun getCachedCallLogs(): List<CallLogItem> = cachedCallLogs ?: emptyList()
+    }
+
+    fun getCachedCallLogs(): List<CallLogItem> = cachedCallLogs ?: emptyList()
+
     private fun deduplicateLogs(logs: List<CallLogItem>): List<CallLogItem> {
         return logs.distinctBy { item ->
             val cleanNum = item.number.replace(Regex("[^0-9+]"), "")
@@ -31,15 +42,24 @@ class CallLogRepository(private val context: Context) {
         }.sortedByDescending { it.timestamp }
     }
 
-    fun getAllCallLogs(): Flow<List<CallLogItem>> = flow {
-        // Fast direct fetch from device call log & Room DB
-        val deviceLogs = fetchDeviceCallLogsDirectly()
-        emit(deduplicateLogs(deviceLogs))
+    fun getAllCallLogs(forceRefresh: Boolean = false): Flow<List<CallLogItem>> = flow {
+        val now = System.currentTimeMillis()
+        val cached = cachedCallLogs
+        if (!forceRefresh && cached != null && (now - lastLogFetchTime < 30_000)) {
+            emit(cached)
+        } else {
+            val deviceLogs = deduplicateLogs(fetchDeviceCallLogsDirectly())
+            cachedCallLogs = deviceLogs
+            lastLogFetchTime = now
+            emit(deviceLogs)
+        }
 
         callLogDao.getAllCallLogs().map { list ->
             val dbModels = list.map { it.toModel() }
-            deduplicateLogs(deviceLogs + dbModels)
+            val current = cachedCallLogs ?: emptyList()
+            deduplicateLogs(current + dbModels)
         }.collect {
+            cachedCallLogs = it
             emit(it)
         }
     }.flowOn(Dispatchers.IO)

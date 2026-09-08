@@ -22,6 +22,17 @@ class ContactsRepository(private val context: Context) {
     private val gson = Gson()
     private val type = object : TypeToken<List<String>>() {}.type
 
+    companion object {
+        @Volatile
+        private var cachedContacts: List<Contact>? = null
+        @Volatile
+        private var lastFetchTime: Long = 0L
+
+        fun getCachedContacts(): List<Contact> = cachedContacts ?: emptyList()
+    }
+
+    fun getCachedContacts(): List<Contact> = cachedContacts ?: emptyList()
+
     private fun deduplicateContacts(contacts: List<Contact>): List<Contact> {
         val seen = mutableSetOf<String>()
         val result = mutableListOf<Contact>()
@@ -36,14 +47,24 @@ class ContactsRepository(private val context: Context) {
         return result
     }
 
-    fun getAllContacts(): Flow<List<Contact>> = flow {
-        val deviceContacts = deduplicateContacts(fetchDeviceContactsDirectly())
-        emit(deviceContacts)
+    fun getAllContacts(forceRefresh: Boolean = false): Flow<List<Contact>> = flow {
+        val now = System.currentTimeMillis()
+        val cached = cachedContacts
+        if (!forceRefresh && cached != null && (now - lastFetchTime < 60_000)) {
+            emit(cached)
+        } else {
+            val deviceContacts = deduplicateContacts(fetchDeviceContactsDirectly())
+            cachedContacts = deviceContacts
+            lastFetchTime = now
+            emit(deviceContacts)
+        }
 
         contactDao.getAllContacts().map { list ->
-            if (list.isNotEmpty()) deduplicateContacts(list.map { it.toModel(gson, type) }) else deviceContacts
+            val cur = cachedContacts ?: emptyList()
+            if (list.isNotEmpty()) deduplicateContacts(list.map { it.toModel(gson, type) }) else cur
         }.collect {
-            emit(deduplicateContacts(it))
+            cachedContacts = deduplicateContacts(it)
+            emit(cachedContacts!!)
         }
     }.flowOn(Dispatchers.IO)
 

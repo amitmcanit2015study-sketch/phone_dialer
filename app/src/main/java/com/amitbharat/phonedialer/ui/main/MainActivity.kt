@@ -22,6 +22,7 @@ import com.amitbharat.phonedialer.telecom.TelecomHelper
 import com.amitbharat.phonedialer.ui.theme.PhoneDialerTheme
 import com.amitbharat.phonedialer.utils.PreferencesManager
 import com.amitbharat.phonedialer.utils.ThemeMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -56,12 +57,17 @@ class MainActivity : ComponentActivity() {
 
         requestRequiredPermissions()
 
+        lifecycleScope.launch(Dispatchers.IO) {
+            com.amitbharat.phonedialer.repository.SmsRepository.getInstance(this@MainActivity)
+                .loadThreads(contactsRepo.getCachedContacts())
+        }
+
         setContent {
             var themeMode by remember { mutableStateOf(prefs.getThemeMode()) }
 
-            val contacts by contactsRepo.getAllContacts().collectAsState(initial = emptyList())
-            val favorites by contactsRepo.getFavoriteContacts().collectAsState(initial = emptyList())
-            val callLogs by callLogRepo.getAllCallLogs().collectAsState(initial = emptyList())
+            val contacts by contactsRepo.getAllContacts().collectAsState(initial = contactsRepo.getCachedContacts())
+            val favorites = remember(contacts) { contacts.filter { it.isFavorite } }
+            val callLogs by callLogRepo.getAllCallLogs().collectAsState(initial = callLogRepo.getCachedCallLogs())
             val speedDials by callLogRepo.getSpeedDials().collectAsState(initial = emptyList())
 
             PhoneDialerTheme(themeMode = themeMode) {
@@ -88,9 +94,11 @@ class MainActivity : ComponentActivity() {
                         lifecycleScope.launch { callLogRepo.deleteCallLog(id) }
                     },
                     onSyncDeviceContacts = {
-                        lifecycleScope.launch {
+                        lifecycleScope.launch(Dispatchers.IO) {
                             contactsRepo.syncDeviceContacts()
                             callLogRepo.syncDeviceCallLogs()
+                            com.amitbharat.phonedialer.repository.SmsRepository.getInstance(this@MainActivity)
+                                .loadThreads(contactsRepo.getCachedContacts(), forceRefresh = true)
                         }
                     },
                     onThemeChange = { mode -> themeMode = mode }
@@ -101,10 +109,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        lifecycleScope.launch {
-            contactsRepo.syncDeviceContacts()
-            callLogRepo.syncDeviceCallLogs()
-        }
+        // Kept light: do not reload/re-sync everything on every resume to ensure instant navigation
     }
 
     private fun checkDefaultDialerRole() {

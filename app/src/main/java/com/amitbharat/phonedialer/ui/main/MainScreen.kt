@@ -61,6 +61,8 @@ fun MainScreen(
     var showAboutScreen by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
     var selectedContactDetails by remember { mutableStateOf<ContactDetailSelection?>(null) }
+    var editingContact by remember { mutableStateOf<Contact?>(null) }
+    var activeChatThread by remember { mutableStateOf<com.amitbharat.phonedialer.ui.messages.MessageThread?>(null) }
     
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
@@ -74,6 +76,8 @@ fun MainScreen(
     // Root Level Back Handler for Smooth Navigation & Double-Back App Exit
     BackHandler {
         when {
+            activeChatThread != null -> activeChatThread = null
+            editingContact != null -> editingContact = null
             selectedContactDetails != null -> selectedContactDetails = null
             showAboutScreen -> showAboutScreen = false
             showSettingsScreen -> showSettingsScreen = false
@@ -98,24 +102,51 @@ fun MainScreen(
         }
     }
 
-    if (selectedContactDetails != null) {
+    if (activeChatThread != null) {
+        com.amitbharat.phonedialer.ui.messages.ChatThreadScreen(
+            thread = activeChatThread!!,
+            onBack = { activeChatThread = null },
+            onCallClick = { onCallClick(activeChatThread!!.displayAddress, 0) }
+        )
+    } else if (editingContact != null) {
+        com.amitbharat.phonedialer.ui.contacts.AddEditContactScreen(
+            initialContact = editingContact,
+            onBack = { editingContact = null },
+            onSave = { updated ->
+                onAddContact(updated)
+                editingContact = null
+                Toast.makeText(context, "Contact saved", Toast.LENGTH_SHORT).show()
+            }
+        )
+    } else if (selectedContactDetails != null) {
         val details = selectedContactDetails!!
         ContactDetailsScreen(
             name = details.name,
             number = details.number,
             photoUri = details.photoUri,
-            contact = details.contact ?: contacts.find { it.name == details.name },
+            contact = details.contact ?: contacts.find { it.name == details.name || it.numbers.contains(details.number) },
             callLogs = callLogs,
             onBack = { selectedContactDetails = null },
             onCallClick = { num -> onCallClick(num, 0) },
             onMessageClick = { num ->
+                val digits = num.replace(Regex("[^0-9]"), "")
+                val norm = if (digits.length >= 10) digits.takeLast(10) else digits
+                val thread = com.amitbharat.phonedialer.ui.messages.MessageThread(
+                    normalizedNumber = norm,
+                    displayAddress = num,
+                    contactName = details.name,
+                    latestBody = "",
+                    latestTimestamp = System.currentTimeMillis(),
+                    unreadCount = 0,
+                    threadIds = emptyList()
+                )
                 selectedContactDetails = null
-                currentTab = MainTab.MESSAGES
+                activeChatThread = thread
             },
             onToggleFavorite = onToggleFavorite,
             onEditContact = { c ->
                 selectedContactDetails = null
-                currentTab = MainTab.CONTACTS
+                editingContact = c
             }
         )
     } else if (showAboutScreen) {
@@ -256,7 +287,8 @@ fun MainScreen(
                     )
                     MainTab.MESSAGES -> MessagesScreen(
                         contacts = contacts,
-                        onCallClick = { num -> onCallClick(num, 0) }
+                        onCallClick = { num -> onCallClick(num, 0) },
+                        onOpenThread = { thread -> activeChatThread = thread }
                     )
                     MainTab.FAVORITES -> FavoritesScreen(
                         favorites = favorites,

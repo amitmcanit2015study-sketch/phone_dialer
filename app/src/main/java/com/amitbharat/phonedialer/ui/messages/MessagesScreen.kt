@@ -27,6 +27,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -46,7 +48,9 @@ data class MessageThread(
     val latestBody: String,
     val latestTimestamp: Long,
     val unreadCount: Int,
-    val threadIds: List<Long>
+    val threadIds: List<Long>,
+    val isOutgoing: Boolean = false,
+    val isDelivered: Boolean = false
 )
 
 data class SmsMessageItem(
@@ -54,7 +58,9 @@ data class SmsMessageItem(
     val address: String,
     val body: String,
     val timestamp: Long,
-    val isOutgoing: Boolean
+    val isOutgoing: Boolean,
+    val status: Int = -1,
+    val isDelivered: Boolean = false
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,6 +68,7 @@ data class SmsMessageItem(
 fun MessagesScreen(
     contacts: List<Contact>,
     onCallClick: (String) -> Unit,
+    onOpenThread: ((MessageThread) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -69,6 +76,13 @@ fun MessagesScreen(
     var isSearchOpen by remember { mutableStateOf(false) }
     var selectedThread by remember { mutableStateOf<MessageThread?>(null) }
     var showNewComposer by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isSearchOpen) {
+        if (isSearchOpen) {
+            focusRequester.requestFocus()
+        }
+    }
 
     BackHandler(enabled = showNewComposer || selectedThread != null || isSearchOpen) {
         when {
@@ -88,87 +102,19 @@ fun MessagesScreen(
 
     var syncTrigger by remember { mutableStateOf(0) }
 
-    // Fetch and aggregate ALL SMS Messages grouped strictly by Normalized Phone Number off the UI thread
-    val threads by produceState<List<MessageThread>>(initialValue = emptyList(), key1 = contacts, key2 = syncTrigger) {
-        value = withContext(Dispatchers.IO) {
-            val list = mutableListOf<MessageThread>()
-            try {
-                val cursor: Cursor? = context.contentResolver.query(
-                    Telephony.Sms.CONTENT_URI,
-                    arrayOf("_id", "thread_id", "address", "body", "date", "read", "type"),
-                    null,
-                    null,
-                    "date DESC"
-                )
-                cursor?.use {
-                    val threadIdIdx = it.getColumnIndex("thread_id")
-                    val addressIdx = it.getColumnIndex("address")
-                    val bodyIdx = it.getColumnIndex("body")
-                    val dateIdx = it.getColumnIndex("date")
-                    val readIdx = it.getColumnIndex("read")
+    val smsRepo = remember { com.amitbharat.phonedialer.repository.SmsRepository.getInstance(context) }
+    val threads by smsRepo.threads.collectAsState()
 
-                    val groupedMap = LinkedHashMap<String, MutableList<Pair<Long, String>>>()
-                    val addressDisplayMap = HashMap<String, String>()
-                    val threadIdMap = HashMap<String, MutableList<Long>>()
-                    val unreadCountMap = HashMap<String, Int>()
-
-                    while (it.moveToNext()) {
-                        val threadId = if (threadIdIdx >= 0) it.getLong(threadIdIdx) else 0L
-                        val rawAddress = if (addressIdx >= 0) it.getString(addressIdx) ?: "" else ""
-                        val body = if (bodyIdx >= 0) it.getString(bodyIdx) ?: "" else ""
-                        val date = if (dateIdx >= 0) it.getLong(dateIdx) else System.currentTimeMillis()
-                        val read = if (readIdx >= 0) it.getInt(readIdx) == 1 else true
-
-                        if (rawAddress.isNotBlank()) {
-                            val normKey = normalizeNumber(rawAddress)
-                            if (normKey.isNotBlank()) {
-                                groupedMap.getOrPut(normKey) { mutableListOf() }.add(Pair(date, body))
-                                if (!addressDisplayMap.containsKey(normKey)) {
-                                    addressDisplayMap[normKey] = rawAddress
-                                }
-                                if (threadId > 0) {
-                                    threadIdMap.getOrPut(normKey) { mutableListOf() }.add(threadId)
-                                }
-                                if (!read) {
-                                    unreadCountMap[normKey] = (unreadCountMap[normKey] ?: 0) + 1
-                                }
-                            }
-                        }
-                    }
-
-                    groupedMap.forEach { (normKey, itemsList) ->
-                        val displayAddress = addressDisplayMap[normKey] ?: normKey
-                        val latestItem = itemsList.first()
-                        val matchingContact = contacts.find { c ->
-                            c.numbers.any { num -> normalizeNumber(num) == normKey }
-                        }
-
-                        list.add(
-                            MessageThread(
-                                normalizedNumber = normKey,
-                                displayAddress = displayAddress,
-                                contactName = matchingContact?.name,
-                                latestBody = latestItem.second,
-                                latestTimestamp = latestItem.first,
-                                unreadCount = unreadCountMap[normKey] ?: 0,
-                                threadIds = threadIdMap[normKey]?.distinct() ?: emptyList()
-                            )
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            list
-        }
+    LaunchedEffect(contacts, syncTrigger) {
+        smsRepo.loadThreads(contacts, forceRefresh = syncTrigger > 0)
     }
 
     val filteredThreads = remember(searchQuery, threads) {
         if (searchQuery.isBlank()) threads
         else threads.filter {
             (it.contactName?.contains(searchQuery, ignoreCase = true) == true) ||
-            it.displayAddress.contains(searchQuery) ||
-            it.latestBody.contains(searchQuery, ignoreCase = true)
+                    it.displayAddress.contains(searchQuery) ||
+                    it.latestBody.contains(searchQuery, ignoreCase = true)
         }
     }
 
@@ -180,11 +126,9 @@ fun MessagesScreen(
                 showNewComposer = false
                 val norm = normalizeNumber(targetNum)
                 val existing = threads.find { it.normalizedNumber == norm }
-                if (existing != null) {
-                    selectedThread = existing
-                } else {
+                val targetThread = existing ?: run {
                     val matchingContact = contacts.find { c -> c.numbers.any { n -> normalizeNumber(n) == norm } }
-                    selectedThread = MessageThread(
+                    MessageThread(
                         normalizedNumber = norm,
                         displayAddress = targetNum,
                         contactName = matchingContact?.name,
@@ -193,6 +137,11 @@ fun MessagesScreen(
                         unreadCount = 0,
                         threadIds = emptyList()
                     )
+                }
+                if (onOpenThread != null) {
+                    onOpenThread(targetThread)
+                } else {
+                    selectedThread = targetThread
                 }
             }
         )
@@ -209,31 +158,104 @@ fun MessagesScreen(
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 2.dp)
             ) {
-                // Header (No extra vertical space)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Top-Anchored Search Bar when isSearchOpen is true
+                AnimatedVisibility(
+                    visible = isSearchOpen,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
                 ) {
-                    Text(
-                        text = "Messages (${threads.size})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    FilledTonalButton(
-                        onClick = {
-                            syncTrigger++
-                            Toast.makeText(context, "Syncing SMS messages…", Toast.LENGTH_SHORT).show()
-                        },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(32.dp)
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        elevation = CardDefaults.cardElevation(2.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Sync", modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Sync SMS", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Search messages…", fontSize = 14.sp) },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focusRequester),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color.Transparent,
+                                    unfocusedBorderColor = Color.Transparent
+                                )
+                            )
+                            IconButton(onClick = {
+                                if (searchQuery.isNotEmpty()) {
+                                    searchQuery = ""
+                                } else {
+                                    isSearchOpen = false
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close Search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Standard Header (When search is inactive)
+                if (!isSearchOpen) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Messages (${threads.size})",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { isSearchOpen = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            FilledTonalButton(
+                                onClick = {
+                                    syncTrigger++
+                                    Toast.makeText(context, "Syncing SMS messages…", Toast.LENGTH_SHORT).show()
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Sync", modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Sync SMS", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
 
@@ -248,7 +270,7 @@ fun MessagesScreen(
                 } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 12.dp, bottom = if (isSearchOpen) 150.dp else 100.dp)
+                        contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
                     ) {
                         items(filteredThreads, key = { it.normalizedNumber }) { thread ->
                             val formattedTime = remember(thread.latestTimestamp) {
@@ -264,7 +286,13 @@ fun MessagesScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp)
-                                    .clickable { selectedThread = thread },
+                                    .clickable {
+                                        if (onOpenThread != null) {
+                                            onOpenThread(thread)
+                                        } else {
+                                            selectedThread = thread
+                                        }
+                                    },
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                 shape = RoundedCornerShape(14.dp)
                             ) {
@@ -280,76 +308,60 @@ fun MessagesScreen(
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(
-                                                text = thread.contactName ?: thread.displayAddress,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 16.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = thread.contactName ?: thread.displayAddress,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 16.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (thread.contactName != null) {
+                                                    Text(
+                                                        text = thread.displayAddress,
+                                                        fontSize = 12.sp,
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                            }
                                             Text(
                                                 text = formattedTime,
                                                 fontSize = 11.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                        Spacer(Modifier.height(2.dp))
-                                        Text(
-                                            text = thread.latestBody,
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
+                                        Spacer(Modifier.height(3.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (thread.isOutgoing) {
+                                                Icon(
+                                                    imageVector = if (thread.isDelivered) Icons.Default.DoneAll else Icons.Default.Check,
+                                                    contentDescription = if (thread.isDelivered) "Delivered" else "Sent",
+                                                    tint = if (thread.isDelivered) AccentGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.DoneAll,
+                                                    contentDescription = "Received",
+                                                    tint = AccentGreen,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                            }
+                                            Text(
+                                                text = thread.latestBody,
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
-                    }
-                }
-            }
-
-            // Expandable Bottom Search Bar (Item 2 & 5: Aligned single bar at bottom)
-            AnimatedVisibility(
-                visible = isSearchOpen,
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 16.dp)
-            ) {
-                Card(
-                    shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search messages…", fontSize = 14.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent
-                            )
-                        )
-                        IconButton(onClick = {
-                            if (searchQuery.isNotEmpty()) {
-                                searchQuery = ""
-                            } else {
-                                isSearchOpen = false
-                            }
-                        }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close Search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -528,19 +540,21 @@ fun ChatThreadScreen(
     val context = LocalContext.current
     var messageInput by remember { mutableStateOf("") }
     var refreshTrigger by remember { mutableIntStateOf(0) }
+    var localSentMessages by remember(thread.normalizedNumber) { mutableStateOf<List<SmsMessageItem>>(emptyList()) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     fun normalizeNumber(raw: String): String {
         val digits = raw.replace(Regex("[^0-9]"), "")
         return if (digits.length >= 10) digits.takeLast(10) else digits
     }
 
-    // Fetch all SMS messages for this normalized number (Item 10 & 9 auto-refresh)
+    // Fetch all SMS messages for this normalized number
     val messages = remember(thread.normalizedNumber, refreshTrigger) {
         val list = mutableListOf<SmsMessageItem>()
         try {
             val cursor: Cursor? = context.contentResolver.query(
                 Telephony.Sms.CONTENT_URI,
-                arrayOf("_id", "address", "body", "date", "type"),
+                arrayOf("_id", "address", "body", "date", "type", "status"),
                 null,
                 null,
                 "date ASC"
@@ -551,6 +565,7 @@ fun ChatThreadScreen(
                 val bodyIdx = it.getColumnIndex("body")
                 val dateIdx = it.getColumnIndex("date")
                 val typeIdx = it.getColumnIndex("type")
+                val statusIdx = it.getColumnIndex("status")
 
                 val targetNorm = thread.normalizedNumber
 
@@ -561,6 +576,9 @@ fun ChatThreadScreen(
                         val body = if (bodyIdx >= 0) it.getString(bodyIdx) ?: "" else ""
                         val date = if (dateIdx >= 0) it.getLong(dateIdx) else System.currentTimeMillis()
                         val type = if (typeIdx >= 0) it.getInt(typeIdx) else Telephony.Sms.MESSAGE_TYPE_INBOX
+                        val status = if (statusIdx >= 0) it.getInt(statusIdx) else -1
+                        val isOut = type == Telephony.Sms.MESSAGE_TYPE_SENT || type == Telephony.Sms.MESSAGE_TYPE_OUTBOX
+                        val isDelivered = status == 0
 
                         list.add(
                             SmsMessageItem(
@@ -568,7 +586,9 @@ fun ChatThreadScreen(
                                 address = addr,
                                 body = body,
                                 timestamp = date,
-                                isOutgoing = type == Telephony.Sms.MESSAGE_TYPE_SENT || type == Telephony.Sms.MESSAGE_TYPE_OUTBOX
+                                isOutgoing = isOut,
+                                status = status,
+                                isDelivered = isDelivered
                             )
                         )
                     }
@@ -578,6 +598,18 @@ fun ChatThreadScreen(
             e.printStackTrace()
         }
         list
+    }
+
+    val allMessages = remember(messages, localSentMessages) {
+        (messages + localSentMessages)
+            .distinctBy { "${it.address}_${it.body}_${it.timestamp / 3000}" }
+            .sortedBy { it.timestamp }
+    }
+
+    LaunchedEffect(allMessages.size) {
+        if (allMessages.isNotEmpty()) {
+            listState.animateScrollToItem(allMessages.size - 1)
+        }
     }
 
     Scaffold(
@@ -610,10 +642,15 @@ fun ChatThreadScreen(
             Surface(
                 shadowElevation = 8.dp,
                 color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth().navigationBarsPadding()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
@@ -627,20 +664,51 @@ fun ChatThreadScreen(
                     Spacer(Modifier.width(8.dp))
                     IconButton(
                         onClick = {
-                            if (messageInput.isNotBlank()) {
+                            val textToSend = messageInput.trim()
+                            if (textToSend.isNotBlank()) {
+                                val immediateItem = SmsMessageItem(
+                                    id = System.currentTimeMillis(),
+                                    address = thread.displayAddress,
+                                    body = textToSend,
+                                    timestamp = System.currentTimeMillis(),
+                                    isOutgoing = true
+                                )
+                                localSentMessages = localSentMessages + immediateItem
+                                messageInput = ""
+
                                 try {
-                                    val smsManager = SmsManager.getDefault()
-                                    smsManager.sendTextMessage(thread.displayAddress, null, messageInput, null, null)
-                                    Toast.makeText(context, "Message sent", Toast.LENGTH_SHORT).show()
-                                    messageInput = ""
-                                    refreshTrigger++
-                                } catch (e: Exception) {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("sms:${thread.displayAddress}")).apply {
-                                        putExtra("sms_body", messageInput)
+                                    val smsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                                        context.getSystemService(android.telephony.SmsManager::class.java)
+                                    } else {
+                                        @Suppress("DEPRECATION")
+                                        android.telephony.SmsManager.getDefault()
                                     }
-                                    context.startActivity(intent)
-                                    refreshTrigger++
+                                    smsManager.sendTextMessage(thread.displayAddress, null, textToSend, null, null)
+                                    Toast.makeText(context, "Message sent", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("sms:${thread.displayAddress}")).apply {
+                                            putExtra("sms_body", textToSend)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (ex: Exception) {}
                                 }
+
+                                try {
+                                    val values = android.content.ContentValues().apply {
+                                        put(Telephony.Sms.ADDRESS, thread.displayAddress)
+                                        put(Telephony.Sms.BODY, textToSend)
+                                        put(Telephony.Sms.DATE, System.currentTimeMillis())
+                                        put(Telephony.Sms.READ, 1)
+                                        put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT)
+                                    }
+                                    context.contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
+                                } catch (e: Exception) {}
+
+                                com.amitbharat.phonedialer.repository.SmsRepository.getInstance(context)
+                                    .updateThreadOptimistic(thread.displayAddress, textToSend, thread.contactName)
+
+                                refreshTrigger++
                             }
                         },
                         modifier = Modifier.size(46.dp).background(AccentGreen, CircleShape)
@@ -652,10 +720,15 @@ fun ChatThreadScreen(
         }
     ) { innerPadding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 12.dp, vertical = 4.dp),
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 12.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.id.toString() + "_" + it.timestamp }) { msg ->
+            items(allMessages, key = { it.id.toString() + "_" + it.timestamp + "_" + it.isOutgoing }) { msg ->
                 val align = if (msg.isOutgoing) Alignment.CenterEnd else Alignment.CenterStart
                 val bg = if (msg.isOutgoing) AccentGreen.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
 
@@ -667,13 +740,42 @@ fun ChatThreadScreen(
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                             Text(msg.body, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(msg.timestamp)),
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.align(Alignment.End)
-                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.align(Alignment.End),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(msg.timestamp)),
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                if (msg.isOutgoing) {
+                                    if (msg.isDelivered) {
+                                        Icon(
+                                            imageVector = Icons.Default.DoneAll,
+                                            contentDescription = "Delivered",
+                                            tint = AccentGreen,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Sent",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.DoneAll,
+                                        contentDescription = "Received",
+                                        tint = AccentGreen,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
