@@ -105,6 +105,7 @@ fun MainScreen(
     if (activeChatThread != null) {
         com.amitbharat.phonedialer.ui.messages.ChatThreadScreen(
             thread = activeChatThread!!,
+            contacts = contacts,
             onBack = { activeChatThread = null },
             onCallClick = { onCallClick(activeChatThread!!.displayAddress, 0) }
         )

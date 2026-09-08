@@ -35,11 +35,61 @@ class SmsRepository(private val context: Context) {
 
     fun normalizeNumber(raw: String): String {
         val digits = raw.replace(Regex("[^0-9]"), "")
-        return if (digits.length >= 10) digits.takeLast(10) else digits
+        return if (digits.length >= 7) digits.takeLast(10) else digits
+    }
+
+    fun getThreadKey(raw: String): String {
+        val norm = normalizeNumber(raw)
+        return if (norm.isNotBlank()) norm else raw.trim().uppercase()
+    }
+
+    fun resolveContactName(address: String, contacts: List<Contact>): String? {
+        val norm = normalizeNumber(address)
+        if (norm.isNotBlank() && contacts.isNotEmpty()) {
+            val match = contacts.find { c ->
+                c.numbers.any { num -> normalizeNumber(num) == norm }
+            }
+            if (match != null && match.name.isNotBlank()) return match.name
+        }
+
+        // Direct PhoneLookup query to Android Contacts Provider
+        try {
+            val uri = android.net.Uri.withAppendedPath(
+                android.provider.ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                android.net.Uri.encode(address)
+            )
+            context.contentResolver.query(
+                uri,
+                arrayOf(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        val name = c.getString(idx)
+                        if (!name.isNullOrBlank()) return name
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Ignored
+        }
+        return null
     }
 
     suspend fun loadThreads(contacts: List<Contact>, forceRefresh: Boolean = false) = withContext(Dispatchers.IO) {
         if (!forceRefresh && isLoaded && _threads.value.isNotEmpty()) {
+            if (contacts.isNotEmpty()) {
+                val updated = _threads.value.map { th ->
+                    if (th.contactName.isNullOrBlank()) {
+                        val resolved = resolveContactName(th.displayAddress, contacts)
+                        if (resolved != null) th.copy(contactName = resolved) else th
+                    } else th
+                }
+                _threads.value = updated
+            }
             return@withContext
         }
 
@@ -63,8 +113,8 @@ class SmsRepository(private val context: Context) {
 
                 while (it.moveToNext()) {
                     val addr = if (addrIdx >= 0) it.getString(addrIdx) ?: "" else ""
-                    val norm = normalizeNumber(addr)
-                    if (norm.isNotBlank()) {
+                    val key = getThreadKey(addr)
+                    if (key.isNotBlank()) {
                         val id = if (idIdx >= 0) it.getLong(idIdx) else 0L
                         val body = if (bodyIdx >= 0) it.getString(bodyIdx) ?: "" else ""
                         val date = if (dateIdx >= 0) it.getLong(dateIdx) else System.currentTimeMillis()
@@ -75,7 +125,7 @@ class SmsRepository(private val context: Context) {
                         val isOut = type == Telephony.Sms.MESSAGE_TYPE_SENT || type == Telephony.Sms.MESSAGE_TYPE_OUTBOX
                         val isDelivered = status == 0 // STATUS_COMPLETE
 
-                        threadMap.getOrPut(norm) { mutableListOf() }.add(
+                        threadMap.getOrPut(key) { mutableListOf() }.add(
                             SmsMessageItem(
                                 id = id,
                                 address = addr,
@@ -93,16 +143,14 @@ class SmsRepository(private val context: Context) {
             e.printStackTrace()
         }
 
-        val list = threadMap.map { (norm, items) ->
+        val list = threadMap.map { (key, items) ->
             val latest = items.first()
-            val matchingContact = contacts.find { c ->
-                c.numbers.any { num -> normalizeNumber(num) == norm }
-            }
+            val resolvedName = resolveContactName(latest.address, contacts)
 
             MessageThread(
-                normalizedNumber = norm,
+                normalizedNumber = key,
                 displayAddress = latest.address,
-                contactName = matchingContact?.name,
+                contactName = resolvedName,
                 latestBody = latest.body,
                 latestTimestamp = latest.timestamp,
                 unreadCount = items.count { !it.isOutgoing },

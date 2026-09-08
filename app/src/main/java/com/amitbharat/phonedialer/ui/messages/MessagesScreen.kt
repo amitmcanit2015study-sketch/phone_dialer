@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -148,6 +150,7 @@ fun MessagesScreen(
     } else if (selectedThread != null) {
         ChatThreadScreen(
             thread = selectedThread!!,
+            contacts = contacts,
             onBack = { selectedThread = null },
             onCallClick = { onCallClick(selectedThread!!.displayAddress) }
         )
@@ -296,11 +299,18 @@ fun MessagesScreen(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                 shape = RoundedCornerShape(14.dp)
                             ) {
+                                val resolvedName = thread.contactName ?: remember(thread.displayAddress, contacts) {
+                                    val norm = smsRepo.normalizeNumber(thread.displayAddress)
+                                    val match = contacts.find { c -> c.numbers.any { smsRepo.normalizeNumber(it) == norm } }
+                                    match?.name ?: smsRepo.resolveContactName(thread.displayAddress, contacts)
+                                }
+                                val hasSavedName = !resolvedName.isNullOrBlank() && resolvedName != thread.displayAddress
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    ContactAvatar(name = thread.contactName ?: thread.displayAddress, size = 48.dp, fontSize = 18.sp)
+                                    ContactAvatar(name = if (hasSavedName) resolvedName!! else thread.displayAddress, size = 48.dp, fontSize = 18.sp)
                                     Spacer(Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Row(
@@ -310,14 +320,14 @@ fun MessagesScreen(
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = thread.contactName ?: thread.displayAddress,
+                                                    text = if (hasSavedName) resolvedName!! else thread.displayAddress,
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 16.sp,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
                                                     color = MaterialTheme.colorScheme.onSurface
                                                 )
-                                                if (thread.contactName != null) {
+                                                if (hasSavedName) {
                                                     Text(
                                                         text = thread.displayAddress,
                                                         fontSize = 12.sp,
@@ -534,18 +544,34 @@ fun NewMessageComposerScreen(
 @Composable
 fun ChatThreadScreen(
     thread: MessageThread,
+    contacts: List<Contact> = emptyList(),
     onBack: () -> Unit,
     onCallClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val smsRepo = remember { com.amitbharat.phonedialer.repository.SmsRepository.getInstance(context) }
+
+    val resolvedName = thread.contactName ?: remember(thread.displayAddress, contacts) {
+        val norm = smsRepo.normalizeNumber(thread.displayAddress)
+        val match = contacts.find { c -> c.numbers.any { smsRepo.normalizeNumber(it) == norm } }
+        match?.name ?: smsRepo.resolveContactName(thread.displayAddress, contacts)
+    }
+    val hasSavedName = !resolvedName.isNullOrBlank() && resolvedName != thread.displayAddress
+
     var messageInput by remember { mutableStateOf("") }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var localSentMessages by remember(thread.normalizedNumber) { mutableStateOf<List<SmsMessageItem>>(emptyList()) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val isImeVisible = imeBottom > 0
+    var isInputFocused by remember { mutableStateOf(false) }
+
     fun normalizeNumber(raw: String): String {
         val digits = raw.replace(Regex("[^0-9]"), "")
-        return if (digits.length >= 10) digits.takeLast(10) else digits
+        return if (digits.length >= 7) digits.takeLast(10) else digits
     }
 
     // Fetch all SMS messages for this normalized number
@@ -571,7 +597,8 @@ fun ChatThreadScreen(
 
                 while (it.moveToNext()) {
                     val addr = if (addrIdx >= 0) it.getString(addrIdx) ?: "" else ""
-                    if (normalizeNumber(addr) == targetNorm) {
+                    val key = smsRepo.getThreadKey(addr)
+                    if (key == targetNorm || normalizeNumber(addr) == targetNorm) {
                         val id = if (idIdx >= 0) it.getLong(idIdx) else 0L
                         val body = if (bodyIdx >= 0) it.getString(bodyIdx) ?: "" else ""
                         val date = if (dateIdx >= 0) it.getLong(dateIdx) else System.currentTimeMillis()
@@ -606,9 +633,24 @@ fun ChatThreadScreen(
             .sortedBy { it.timestamp }
     }
 
+    // Keep recent messages visible above keyboard whenever keyboard opens or input is focused
+    LaunchedEffect(isImeVisible, imeBottom) {
+        if (allMessages.isNotEmpty()) {
+            kotlinx.coroutines.delay(60)
+            listState.scrollToItem(allMessages.size - 1)
+        }
+    }
+
+    LaunchedEffect(isInputFocused) {
+        if (isInputFocused && allMessages.isNotEmpty()) {
+            kotlinx.coroutines.delay(120)
+            listState.scrollToItem(allMessages.size - 1)
+        }
+    }
+
     LaunchedEffect(allMessages.size) {
         if (allMessages.isNotEmpty()) {
-            listState.animateScrollToItem(allMessages.size - 1)
+            listState.scrollToItem(allMessages.size - 1)
         }
     }
 
@@ -617,11 +659,13 @@ fun ChatThreadScreen(
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ContactAvatar(name = thread.contactName ?: thread.displayAddress, size = 38.dp, fontSize = 15.sp)
+                        ContactAvatar(name = if (hasSavedName) resolvedName!! else thread.displayAddress, size = 38.dp, fontSize = 15.sp)
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(thread.contactName ?: thread.displayAddress, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text(thread.displayAddress, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (hasSavedName) resolvedName!! else thread.displayAddress, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            if (hasSavedName) {
+                                Text(thread.displayAddress, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 },
@@ -657,7 +701,11 @@ fun ChatThreadScreen(
                         value = messageInput,
                         onValueChange = { messageInput = it },
                         placeholder = { Text("Type a message…") },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .onFocusChanged { focusState ->
+                                isInputFocused = focusState.isFocused
+                            },
                         shape = RoundedCornerShape(24.dp),
                         maxLines = 4
                     )
@@ -709,6 +757,10 @@ fun ChatThreadScreen(
                                     .updateThreadOptimistic(thread.displayAddress, textToSend, thread.contactName)
 
                                 refreshTrigger++
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(50)
+                                    listState.scrollToItem(allMessages.size - 1)
+                                }
                             }
                         },
                         modifier = Modifier.size(46.dp).background(AccentGreen, CircleShape)
@@ -725,7 +777,7 @@ fun ChatThreadScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(allMessages, key = { it.id.toString() + "_" + it.timestamp + "_" + it.isOutgoing }) { msg ->
