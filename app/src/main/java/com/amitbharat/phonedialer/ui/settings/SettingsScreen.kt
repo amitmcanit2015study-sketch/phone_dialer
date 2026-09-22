@@ -154,241 +154,28 @@ fun SettingsScreen(
                 // CALL SETTINGS SECTION
                 // ==========================================
 
-                // 1. Default Dialer Card
                 item {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isDefaultDialer) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    if (isDefaultDialer) Icons.Default.CheckCircle else Icons.Default.Phone,
-                                    contentDescription = null,
-                                    tint = if (isDefaultDialer) AccentGreen else MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = if (isDefaultDialer) "Default Phone App (Active)" else stringResource(R.string.set_default_dialer_title),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 17.sp,
-                                    color = if (isDefaultDialer) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = if (isDefaultDialer) "Phone Dialer is currently managing your incoming and outgoing phone calls."
-                                else stringResource(R.string.set_default_dialer_desc),
-                                fontSize = 13.sp,
-                                color = if (isDefaultDialer) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                            )
-                            if (!isDefaultDialer) {
-                                Spacer(Modifier.height(12.dp))
-                                Button(onClick = { requestDefaultDialer() }) {
-                                    Text(stringResource(R.string.btn_set_default))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 2. Call Blocking & Spam Filter
-                item {
-                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Block, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(10.dp))
-                                Text("Call Blocking & Spam Filter", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Block Unknown Callers", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Reject calls from numbers not saved in contacts", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Switch(
-                                    checked = blockUnknown,
-                                    onCheckedChange = {
-                                        blockUnknown = it
-                                        prefs.setBlockUnknownCallsEnabled(it)
-                                    }
-                                )
-                            }
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Filter Suspected Spam Calls", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Automatically warn or silence suspected telemarketers", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Switch(
-                                    checked = blockSpam,
-                                    onCheckedChange = {
-                                        blockSpam = it
-                                        prefs.setBlockSpamCallsEnabled(it)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 3. Preferred Calling SIM Card
-                item {
-                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.SimCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(10.dp))
-                                Text("Preferred Calling SIM", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            listOf("Always Ask Before Calling", "Use SIM 1 (Primary)", "Use SIM 2 (Secondary)").forEachIndexed { idx, label ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            selectedSimOption = idx
-                                            prefs.setDefaultSim(idx)
-                                        }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = selectedSimOption == idx,
-                                        onClick = {
-                                            selectedSimOption = idx
-                                            prefs.setDefaultSim(idx)
-                                        }
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(label, fontSize = 14.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 4. Call Recording Controls
-                item {
-                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(10.dp))
-                                Text("Call Recording Options", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Record All Calls Automatically", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Automatically record every incoming and outgoing call", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Switch(
-                                    checked = isAutoRecordAll,
-                                    onCheckedChange = {
-                                        isAutoRecordAll = it
-                                        prefs.setAutoCallRecordingEnabled(it)
-                                        Toast.makeText(context, if (it) "Auto recording enabled" else "Auto recording disabled", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 5. Sound & Haptics Feedback
-                item {
-                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(10.dp))
-                                Text("Call Sound & Haptics", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Keypad Vibration Feedback", fontSize = 14.sp)
-                                Switch(checked = isVibration, onCheckedChange = {
-                                    isVibration = it
-                                    prefs.setVibrationEnabled(it)
-                                })
-                            }
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Keypad Audio Tones", fontSize = 14.sp)
-                                Switch(checked = isSound, onCheckedChange = {
-                                    isSound = it
-                                    prefs.setDialpadSoundEnabled(it)
-                                })
-                            }
-                        }
-                    }
-                }
-
-                // 6. Number Formatting
-                item {
-                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Numbers, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(10.dp))
-                                Text("Number Formatting", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("Auto-format Phone Numbers", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Format numbers as (XXX) XXX-XXXX", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Switch(
-                                    checked = autoFormatNumbers,
-                                    onCheckedChange = {
-                                        autoFormatNumbers = it
-                                        prefs.setAutoFormatNumbersEnabled(it)
-                                    }
-                                )
-                            }
-                        }
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp)) {
+                        SettingsCategoryHeader("Call Assist")
+                        SettingsItemRow("Caller ID and spam", Icons.Default.Security)
+                        
+                        SettingsCategoryHeader("General")
+                        SettingsItemRow("Accessibility", Icons.Default.Accessibility)
+                        SettingsItemRow("Assisted dialling", Icons.Default.Public)
+                        SettingsItemRow("Blocked numbers", Icons.Default.Block)
+                        SettingsItemRow("Calling accounts", Icons.Default.SimCard)
+                        SettingsItemRow("Call recording", Icons.Default.Mic)
+                        SettingsItemRow("Display options", Icons.Default.Palette)
+                        SettingsItemRow("Incoming call gesture", Icons.Default.TouchApp)
+                        SettingsItemRow("Quick responses", Icons.Default.Quickreply)
+                        SettingsItemRow("Sounds and vibration", Icons.AutoMirrored.Filled.VolumeUp)
+                        SettingsItemRow("Voicemail", Icons.Default.Voicemail)
+                        SettingsItemRow("Contact ringtones", Icons.Default.MusicNote)
+                        SettingsItemRow("Calling card", Icons.Default.CreditCard)
+                        
+                        SettingsCategoryHeader("Advanced")
+                        SettingsItemRow("Caller ID announcement", Icons.Default.RecordVoiceOver)
+                        SettingsItemRow("Flip to silence", Icons.Default.ScreenRotation)
                     }
                 }
 
@@ -456,8 +243,8 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("SMS Delivery Reports", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Request a delivery report (double tick) for each sent SMS", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Get SMS delivery reports", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Find out when an SMS message is delivered", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Switch(
                                     checked = smsDeliveryReports,
@@ -733,5 +520,57 @@ fun SettingsScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun SettingsCategoryHeader(title: String) {
+    Text(
+        text = title,
+        color = MaterialTheme.colorScheme.primary,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+fun SettingsItemRow(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    subtitle: String? = null,
+    onClick: () -> Unit = {}
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(20.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (subtitle != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

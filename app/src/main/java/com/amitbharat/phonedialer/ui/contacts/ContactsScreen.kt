@@ -6,6 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.launch
+import com.amitbharat.phonedialer.ui.components.AlphabetScroller
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,6 +32,7 @@ import com.amitbharat.phonedialer.utils.ContactAvatar
 fun ContactsScreen(
     contacts: List<Contact>,
     onCallClick: (String) -> Unit,
+    onMessageClick: (String) -> Unit,
     onAddContact: (Contact) -> Unit,
     onToggleFavorite: (Contact) -> Unit,
     onDeleteContact: (Contact) -> Unit,
@@ -41,6 +45,8 @@ fun ContactsScreen(
     var showAddScreen by remember { mutableStateOf(false) }
     var editingContact by remember { mutableStateOf<Contact?>(null) }
     val focusRequester = remember { FocusRequester() }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(isSearchOpen) {
         if (isSearchOpen) {
@@ -149,9 +155,8 @@ fun ContactsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Contacts (${contacts.size})",
@@ -159,15 +164,6 @@ fun ContactsScreen(
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { isSearchOpen = true }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            IconButton(onClick = onSyncDeviceContacts, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Default.Sync, contentDescription = "Sync Contacts", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                            }
-                        }
                     }
                 }
 
@@ -183,18 +179,42 @@ fun ContactsScreen(
                         }
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
-                    ) {
-                        items(filteredContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
-                            ContactItemRow(
-                                contact = contact,
-                                onCallClick = { onCallClick(contact.numbers.firstOrNull() ?: "") },
-                                onToggleFavorite = { onToggleFavorite(contact) },
-                                onContactClick = { onContactClick(contact.name, contact.numbers.firstOrNull() ?: "", contact.photoUri, contact) }
-                            )
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
+                        ) {
+                            items(filteredContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
+                                ContactItemRow(
+                                    contact = contact,
+                                    onCallClick = { onCallClick(contact.numbers.firstOrNull() ?: "") },
+                                    onMessageClick = { onMessageClick(contact.numbers.firstOrNull() ?: "") },
+                                    onToggleFavorite = { onToggleFavorite(contact) },
+                                    onContactClick = { onContactClick(contact.name, contact.numbers.firstOrNull() ?: "", contact.photoUri, contact) }
+                                )
+                            }
                         }
+                        
+                        val alphabet = remember(filteredContacts) {
+                            filteredContacts.mapNotNull { it.name.firstOrNull()?.uppercaseChar() }
+                                .filter { it.isLetter() }
+                                .distinct()
+                                .sorted()
+                        }
+                        
+                        AlphabetScroller(
+                            letters = alphabet,
+                            onLetterSelect = { letter ->
+                                val index = filteredContacts.indexOfFirst { it.name.firstOrNull()?.uppercaseChar() == letter }
+                                if (index >= 0) {
+                                    coroutineScope.launch {
+                                        listState.scrollToItem(index)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp, top = 16.dp, bottom = 80.dp)
+                        )
                     }
                 }
             }
@@ -239,6 +259,7 @@ fun ContactsScreen(
 fun ContactItemRow(
     contact: Contact,
     onCallClick: () -> Unit,
+    onMessageClick: () -> Unit,
     onToggleFavorite: () -> Unit,
     onContactClick: () -> Unit
 ) {
@@ -276,6 +297,9 @@ fun ContactItemRow(
             }
             IconButton(onClick = onCallClick) {
                 Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen)
+            }
+            IconButton(onClick = onMessageClick) {
+                Icon(Icons.Default.Message, contentDescription = "Message", tint = MaterialTheme.colorScheme.primary)
             }
         }
     }

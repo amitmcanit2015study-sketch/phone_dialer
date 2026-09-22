@@ -41,6 +41,7 @@ fun AddEditContactScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets(0.dp),
                 title = {
                     Text(
                         text = if (initialContact == null) "Create Contact" else "Edit Contact",

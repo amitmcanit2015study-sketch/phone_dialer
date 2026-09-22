@@ -15,7 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import com.amitbharat.phonedialer.ui.components.simpleScrollbar
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,6 +63,7 @@ data class SmsMessageItem(
     val body: String,
     val timestamp: Long,
     val isOutgoing: Boolean,
+    val isRead: Boolean = true,
     val status: Int = -1,
     val isDelivered: Boolean = false
 )
@@ -74,6 +77,7 @@ fun MessagesScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
     var searchQuery by remember { mutableStateOf("") }
     var isSearchOpen by remember { mutableStateOf(false) }
     var selectedThread by remember { mutableStateOf<MessageThread?>(null) }
@@ -223,9 +227,8 @@ fun MessagesScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(horizontal = 4.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "Messages (${threads.size})",
@@ -233,32 +236,6 @@ fun MessagesScreen(
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { isSearchOpen = true },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Search",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(Modifier.width(4.dp))
-                            FilledTonalButton(
-                                onClick = {
-                                    syncTrigger++
-                                    Toast.makeText(context, "Syncing SMS messages…", Toast.LENGTH_SHORT).show()
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Sync", modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Sync SMS", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
                     }
                 }
 
@@ -272,7 +249,8 @@ fun MessagesScreen(
                     }
                 } else {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp).simpleScrollbar(listState),
                         contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
                     ) {
                         items(filteredThreads, key = { it.normalizedNumber }) { thread ->
@@ -290,6 +268,9 @@ fun MessagesScreen(
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp)
                                     .clickable {
+                                        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                                            smsRepo.markThreadAsRead(thread.displayAddress)
+                                        }
                                         if (onOpenThread != null) {
                                             onOpenThread(thread)
                                         } else {
@@ -321,7 +302,7 @@ fun MessagesScreen(
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     text = if (hasSavedName) resolvedName!! else thread.displayAddress,
-                                                    fontWeight = FontWeight.Bold,
+                                                    fontWeight = if (thread.unreadCount > 0) FontWeight.Bold else FontWeight.SemiBold,
                                                     fontSize = 16.sp,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
@@ -364,11 +345,22 @@ fun MessagesScreen(
                                             Text(
                                                 text = thread.latestBody,
                                                 fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontWeight = if (thread.unreadCount > 0) FontWeight.SemiBold else FontWeight.Normal,
+                                                color = if (thread.unreadCount > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
+                                    }
+                                    // Vertical red line on right side for unread messages (Req 3)
+                                    if (thread.unreadCount > 0) {
+                                        Spacer(Modifier.width(10.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .width(4.dp)
+                                                .height(42.dp)
+                                                .background(Color(0xFFE53935), RoundedCornerShape(2.dp))
+                                        )
                                     }
                                 }
                             }
@@ -412,7 +404,17 @@ fun MessagesScreen(
 }
 
 // Dedicated New Message Composer Screen (Item 9)
-@OptIn(ExperimentalMaterial3Api::class)
+// Recipient data model for multi-contact messaging
+data class MessageRecipient(
+    val name: String?,
+    val number: String
+) {
+    val displayName: String
+        get() = if (!name.isNullOrBlank()) name else number
+}
+
+// Dedicated New Message Composer Screen with Inline Searchable Dropdown & Multi-Recipient Support (Req 6 & 7)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun NewMessageComposerScreen(
     contacts: List<Contact>,
@@ -420,13 +422,35 @@ fun NewMessageComposerScreen(
     onSend: (recipientNumber: String, messageText: String) -> Unit
 ) {
     val context = LocalContext.current
-    var recipientNumber by remember { mutableStateOf("") }
+    var selectedRecipients by remember { mutableStateOf<List<MessageRecipient>>(emptyList()) }
+    var searchQuery by remember { mutableStateOf("") }
     var messageText by remember { mutableStateOf("") }
-    var showContactPicker by remember { mutableStateOf(false) }
+    var isDropdownExpanded by remember { mutableStateOf(false) }
+
+    val filteredContacts = remember(searchQuery, contacts) {
+        val q = searchQuery.trim()
+        if (q.isBlank()) {
+            contacts.take(25)
+        } else {
+            val qClean = q.replace(Regex("[^0-9+]"), "")
+            contacts.filter { contact ->
+                contact.name.contains(q, ignoreCase = true) ||
+                (qClean.isNotBlank() && contact.numbers.any { num ->
+                    num.replace(Regex("[^0-9+]"), "").contains(qClean)
+                })
+            }.take(30)
+        }
+    }
+
+    val cleanSearchDigits = searchQuery.replace(Regex("[^0-9+]"), "")
+    val isManualNumberInput = cleanSearchDigits.length >= 3 && filteredContacts.none { c ->
+        c.numbers.any { it.replace(Regex("[^0-9+]"), "") == cleanSearchDigits }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets(0.dp),
                 title = { Text("New Message", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -442,22 +466,182 @@ fun NewMessageComposerScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Recipient Field with Contact Add Plus Icon Button (+)
+            // Selected Recipient Chips (Multi-contact support)
+            if (selectedRecipients.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)
+                ) {
+                    selectedRecipients.forEach { recipient ->
+                        InputChip(
+                            selected = false,
+                            onClick = {},
+                            label = {
+                                Text(
+                                    text = recipient.displayName,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = {
+                                        selectedRecipients = selectedRecipients.filter { it.number != recipient.number }
+                                    },
+                                    modifier = Modifier.size(18.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = InputChipDefaults.inputChipColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Recipient Field with search as you type
             OutlinedTextField(
-                value = recipientNumber,
-                onValueChange = { recipientNumber = it },
-                label = { Text("To: Phone number or contact") },
+                value = searchQuery,
+                onValueChange = {
+                    searchQuery = it
+                    isDropdownExpanded = true
+                },
+                label = { Text("To: Name or phone number") },
+                placeholder = { Text(if (selectedRecipients.isEmpty()) "Search by name or number…" else "Add another recipient…") },
                 trailingIcon = {
-                    IconButton(onClick = { showContactPicker = true }) {
-                        Icon(Icons.Default.AddCircle, contentDescription = "Pick Contact", tint = AccentGreen, modifier = Modifier.size(28.dp))
+                    IconButton(onClick = { isDropdownExpanded = !isDropdownExpanded }) {
+                        Icon(
+                            imageVector = if (isDropdownExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                            contentDescription = "Toggle Contacts",
+                            tint = AccentGreen,
+                            modifier = Modifier.size(30.dp)
+                        )
                     }
                 },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused) {
+                            isDropdownExpanded = true
+                        }
+                    }
             )
+
+            // Inline Searchable Dropdown (NOT in a modal dialog!)
+            AnimatedVisibility(
+                visible = isDropdownExpanded && (filteredContacts.isNotEmpty() || isManualNumberInput),
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    elevation = CardDefaults.cardElevation(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 240.dp)
+                ) {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().padding(4.dp)) {
+                        if (isManualNumberInput) {
+                            item {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val newRecipient = MessageRecipient(name = null, number = cleanSearchDigits)
+                                            if (selectedRecipients.none { it.number == newRecipient.number }) {
+                                                selectedRecipients = selectedRecipients + newRecipient
+                                            }
+                                            searchQuery = ""
+                                            isDropdownExpanded = false
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = AccentGreen)
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        text = "Add number: $cleanSearchDigits",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            }
+                        }
+
+                        items(filteredContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
+                            val primaryNumber = contact.numbers.firstOrNull() ?: ""
+                            val isSelected = selectedRecipients.any { r ->
+                                contact.numbers.any { num ->
+                                    num.replace(Regex("[^0-9+]"), "") == r.number.replace(Regex("[^0-9+]"), "")
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (primaryNumber.isNotBlank()) {
+                                            if (isSelected) {
+                                                selectedRecipients = selectedRecipients.filter { r ->
+                                                    !contact.numbers.any { n ->
+                                                        n.replace(Regex("[^0-9+]"), "") == r.number.replace(Regex("[^0-9+]"), "")
+                                                    }
+                                                }
+                                            } else {
+                                                val newRecipient = MessageRecipient(name = contact.name, number = primaryNumber)
+                                                selectedRecipients = selectedRecipients + newRecipient
+                                            }
+                                            searchQuery = ""
+                                            isDropdownExpanded = false
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ContactAvatar(name = contact.name, photoUri = contact.photoUri, size = 36.dp, fontSize = 15.sp)
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        contact.name,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        contact.numbers.joinToString(", "),
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = "Selected",
+                                        tint = AccentGreen,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // Message Body Text Area
             OutlinedTextField(
@@ -469,24 +653,43 @@ fun NewMessageComposerScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Send Action Button
+            // Send Action Button (Sends to all selected recipients)
             Button(
                 onClick = {
-                    if (recipientNumber.isNotBlank() && messageText.isNotBlank()) {
-                        try {
-                            val smsManager = SmsManager.getDefault()
-                            smsManager.sendTextMessage(recipientNumber, null, messageText, null, null)
-                            Toast.makeText(context, "Message sent to $recipientNumber", Toast.LENGTH_SHORT).show()
-                        } catch (e: Exception) {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("sms:$recipientNumber")).apply {
-                                putExtra("sms_body", messageText)
-                            }
-                            context.startActivity(intent)
+                    val finalRecipients = selectedRecipients.toMutableList()
+                    if (finalRecipients.isEmpty() && searchQuery.isNotBlank()) {
+                        val clean = searchQuery.replace(Regex("[^0-9+]"), "")
+                        val matched = contacts.find { c ->
+                            c.name.equals(searchQuery.trim(), ignoreCase = true) ||
+                            c.numbers.any { n -> n.replace(Regex("[^0-9+]"), "") == clean }
                         }
-                        onSend(recipientNumber, messageText)
-                    } else {
-                        Toast.makeText(context, "Please enter recipient number and message text", Toast.LENGTH_SHORT).show()
+                        val num = if (clean.isNotBlank()) clean else searchQuery.trim()
+                        finalRecipients.add(MessageRecipient(name = matched?.name, number = num))
                     }
+
+                    if (finalRecipients.isEmpty()) {
+                        Toast.makeText(context, "Please select at least one recipient", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    if (messageText.isBlank()) {
+                        Toast.makeText(context, "Please enter message text", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+
+                    try {
+                        val smsManager = SmsManager.getDefault()
+                        for (r in finalRecipients) {
+                            smsManager.sendTextMessage(r.number, null, messageText, null, null)
+                        }
+                        Toast.makeText(context, "Message sent to ${finalRecipients.size} recipient(s)", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        val numbers = finalRecipients.joinToString(";") { it.number }
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("sms:$numbers")).apply {
+                            putExtra("sms_body", messageText)
+                        }
+                        context.startActivity(intent)
+                    }
+                    onSend(finalRecipients.first().number, messageText)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
                 shape = RoundedCornerShape(24.dp),
@@ -494,49 +697,10 @@ fun NewMessageComposerScreen(
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White)
                 Spacer(Modifier.width(8.dp))
-                Text("SEND MESSAGE", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                val sendLabel = if (selectedRecipients.size > 1) "SEND TO ALL (${selectedRecipients.size})" else "SEND MESSAGE"
+                Text(sendLabel, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
         }
-    }
-
-    // Contact Picker Dialog when (+) is clicked
-    if (showContactPicker) {
-        AlertDialog(
-            onDismissRequest = { showContactPicker = false },
-            title = { Text("Select Contact", fontWeight = FontWeight.Bold) },
-            text = {
-                LazyColumn(modifier = Modifier.height(350.dp)) {
-                    items(contacts, key = { it.id.toString() + "_" + it.name }) { contact ->
-                        val num = contact.numbers.firstOrNull() ?: ""
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (num.isNotBlank()) {
-                                        recipientNumber = num
-                                        showContactPicker = false
-                                    }
-                                }
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            ContactAvatar(name = contact.name, photoUri = contact.photoUri, size = 40.dp, fontSize = 16.sp)
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(contact.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text(num, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showContactPicker = false }) {
-                    Text("Close")
-                }
-            }
-        )
     }
 }
 
@@ -561,6 +725,10 @@ fun ChatThreadScreen(
 
     var messageInput by remember { mutableStateOf("") }
     var refreshTrigger by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(thread.displayAddress) {
+        smsRepo.markThreadAsRead(thread.displayAddress)
+    }
     var localSentMessages by remember(thread.normalizedNumber) { mutableStateOf<List<SmsMessageItem>>(emptyList()) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 

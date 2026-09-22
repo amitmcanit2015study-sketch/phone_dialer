@@ -31,6 +31,11 @@ class CallLogRepository(private val context: Context) {
         private var lastLogFetchTime: Long = 0L
 
         fun getCachedCallLogs(): List<CallLogItem> = cachedCallLogs ?: emptyList()
+
+        fun updateCachedCallLogs(logs: List<CallLogItem>) {
+            cachedCallLogs = logs
+            lastLogFetchTime = System.currentTimeMillis()
+        }
     }
 
     fun getCachedCallLogs(): List<CallLogItem> = cachedCallLogs ?: emptyList()
@@ -89,8 +94,8 @@ class CallLogRepository(private val context: Context) {
     fun fetchDeviceCallLogsDirectly(): List<CallLogItem> {
         val result = mutableListOf<CallLogItem>()
         try {
-            // Build saved contact number set for fast lookup
-            val savedNumbers = getSavedContactNumbersSet()
+            // Build saved contact number sets for O(1) instant lookup
+            val (savedExactNumbers, savedLast10Numbers) = getSavedContactNumberIndices()
 
             // Map available recordings from recordings folder
             val recordingsMap = getRecordingsMap()
@@ -138,7 +143,10 @@ class CallLogRepository(private val context: Context) {
 
                     if (number.isNotBlank()) {
                         val cleanNum = number.replace(Regex("[^0-9+]"), "")
-                        val isSaved = savedNumbers.contains(cleanNum) || (cleanNum.length >= 10 && savedNumbers.any { s -> s.endsWith(cleanNum.takeLast(10)) })
+                        val digitsOnly = number.replace(Regex("[^0-9]"), "")
+                        val last10 = if (digitsOnly.length >= 10) digitsOnly.takeLast(10) else digitsOnly
+                        val isSaved = savedExactNumbers.contains(cleanNum) || 
+                                      (last10.isNotBlank() && savedLast10Numbers.contains(last10))
                         val recordingPath = recordingsMap[cleanNum]
 
                         result.add(
@@ -163,8 +171,25 @@ class CallLogRepository(private val context: Context) {
         return result
     }
 
-    private fun getSavedContactNumbersSet(): Set<String> {
-        val set = mutableSetOf<String>()
+    private fun getSavedContactNumberIndices(): Pair<Set<String>, Set<String>> {
+        val exactSet = HashSet<String>()
+        val last10Set = HashSet<String>()
+
+        // First check if cached contacts are already in memory to avoid querying ContactsProvider
+        val cached = ContactsRepository.getCachedContacts()
+        if (cached.isNotEmpty()) {
+            for (contact in cached) {
+                for (num in contact.numbers) {
+                    val clean = num.replace(Regex("[^0-9+]"), "")
+                    val digits = num.replace(Regex("[^0-9]"), "")
+                    if (clean.isNotBlank()) exactSet.add(clean)
+                    if (digits.length >= 10) last10Set.add(digits.takeLast(10))
+                    else if (digits.isNotBlank()) last10Set.add(digits)
+                }
+            }
+            return Pair(exactSet, last10Set)
+        }
+
         try {
             val resolver = context.contentResolver
             val cursor = resolver.query(
@@ -179,15 +204,16 @@ class CallLogRepository(private val context: Context) {
                 while (it.moveToNext()) {
                     val raw = if (numIdx >= 0) it.getString(numIdx) ?: "" else ""
                     val clean = raw.replace(Regex("[^0-9+]"), "")
-                    if (clean.isNotBlank()) {
-                        set.add(clean)
-                    }
+                    val digits = raw.replace(Regex("[^0-9]"), "")
+                    if (clean.isNotBlank()) exactSet.add(clean)
+                    if (digits.length >= 10) last10Set.add(digits.takeLast(10))
+                    else if (digits.isNotBlank()) last10Set.add(digits)
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return set
+        return Pair(exactSet, last10Set)
     }
 
     private fun getRecordingsMap(): Map<String, String> {

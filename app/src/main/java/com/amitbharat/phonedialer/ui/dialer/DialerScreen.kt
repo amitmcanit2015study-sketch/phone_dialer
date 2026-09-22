@@ -14,6 +14,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.amitbharat.phonedialer.ui.components.simpleScrollbar
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -81,6 +83,7 @@ fun DialerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
     val prefs = remember { PreferencesManager.getInstance(context) }
     val coroutineScope = rememberCoroutineScope()
 
@@ -421,7 +424,8 @@ fun DialerScreen(
                         }
                     } else {
                         LazyColumn(
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 2.dp),
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 2.dp).simpleScrollbar(listState),
                             contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
                         ) {
                             filteredLogs.forEach { (dayHeader, logsInDay) ->

@@ -56,7 +56,6 @@ fun MainScreen(
 ) {
     val context = LocalContext.current
     var currentTab by remember { mutableStateOf(MainTab.DIALER) }
-    val tabHistory = remember { mutableStateListOf(MainTab.DIALER) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showAboutScreen by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
@@ -67,13 +66,10 @@ fun MainScreen(
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
     fun navigateToTab(tab: MainTab) {
-        if (currentTab != tab) {
-            currentTab = tab
-            tabHistory.add(tab)
-        }
+        currentTab = tab
     }
 
-    // Root Level Back Handler for Smooth Navigation & Double-Back App Exit
+    // Root Level Back Handler: No navigation trail; pressing back from any tab directly returns to DIALER
     BackHandler {
         when {
             activeChatThread != null -> activeChatThread = null
@@ -81,14 +77,8 @@ fun MainScreen(
             selectedContactDetails != null -> selectedContactDetails = null
             showAboutScreen -> showAboutScreen = false
             showSettingsScreen -> showSettingsScreen = false
-            tabHistory.size > 1 -> {
-                tabHistory.removeAt(tabHistory.lastIndex)
-                currentTab = tabHistory.last()
-            }
             currentTab != MainTab.DIALER -> {
                 currentTab = MainTab.DIALER
-                tabHistory.clear()
-                tabHistory.add(MainTab.DIALER)
             }
             else -> {
                 val now = System.currentTimeMillis()
@@ -278,6 +268,20 @@ fun MainScreen(
                     MainTab.CONTACTS -> ContactsScreen(
                         contacts = contacts,
                         onCallClick = { num -> onCallClick(num, 0) },
+                        onMessageClick = { num ->
+                            val digits = num.replace(Regex("[^0-9]"), "")
+                            val norm = if (digits.length >= 10) digits.takeLast(10) else digits
+                            val thread = com.amitbharat.phonedialer.ui.messages.MessageThread(
+                                normalizedNumber = norm,
+                                displayAddress = num,
+                                contactName = contacts.find { it.numbers.contains(num) }?.name,
+                                latestBody = "",
+                                latestTimestamp = System.currentTimeMillis(),
+                                unreadCount = 0,
+                                threadIds = emptyList()
+                            )
+                            activeChatThread = thread
+                        },
                         onAddContact = onAddContact,
                         onToggleFavorite = onToggleFavorite,
                         onDeleteContact = onDeleteContact,

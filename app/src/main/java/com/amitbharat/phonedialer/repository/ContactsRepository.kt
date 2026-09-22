@@ -29,6 +29,11 @@ class ContactsRepository(private val context: Context) {
         private var lastFetchTime: Long = 0L
 
         fun getCachedContacts(): List<Contact> = cachedContacts ?: emptyList()
+
+        fun updateCachedContacts(contacts: List<Contact>) {
+            cachedContacts = contacts
+            lastFetchTime = System.currentTimeMillis()
+        }
     }
 
     fun getCachedContacts(): List<Contact> = cachedContacts ?: emptyList()

@@ -1,5 +1,6 @@
 package com.amitbharat.phonedialer.repository
 
+import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.provider.Telephony
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 
 class SmsRepository(private val context: Context) {
 
@@ -31,6 +33,8 @@ class SmsRepository(private val context: Context) {
     @Volatile
     private var isLoaded = false
 
+    private val phoneLookupCache = ConcurrentHashMap<String, String>()
+
     fun getCachedThreads(): List<MessageThread> = _threads.value
 
     fun normalizeNumber(raw: String): String {
@@ -43,14 +47,21 @@ class SmsRepository(private val context: Context) {
         return if (norm.isNotBlank()) norm else raw.trim().uppercase()
     }
 
-    fun resolveContactName(address: String, contacts: List<Contact>): String? {
+    fun resolveContactName(address: String, contacts: List<Contact>, precomputedMap: Map<String, String>? = null): String? {
         val norm = normalizeNumber(address)
-        if (norm.isNotBlank() && contacts.isNotEmpty()) {
-            val match = contacts.find { c ->
-                c.numbers.any { num -> normalizeNumber(num) == norm }
+        if (norm.isNotBlank()) {
+            if (precomputedMap != null) {
+                precomputedMap[norm]?.let { return it }
+            } else if (contacts.isNotEmpty()) {
+                val match = contacts.find { c ->
+                    c.numbers.any { num -> normalizeNumber(num) == norm }
+                }
+                if (match != null && match.name.isNotBlank()) return match.name
             }
-            if (match != null && match.name.isNotBlank()) return match.name
         }
+
+        // Check in-memory cache before hitting content resolver
+        phoneLookupCache[address]?.let { return it }
 
         // Direct PhoneLookup query to Android Contacts Provider
         try {
@@ -69,7 +80,10 @@ class SmsRepository(private val context: Context) {
                     val idx = c.getColumnIndex(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME)
                     if (idx >= 0) {
                         val name = c.getString(idx)
-                        if (!name.isNullOrBlank()) return name
+                        if (!name.isNullOrBlank()) {
+                            phoneLookupCache[address] = name
+                            return name
+                        }
                     }
                 }
             }
@@ -80,11 +94,23 @@ class SmsRepository(private val context: Context) {
     }
 
     suspend fun loadThreads(contacts: List<Contact>, forceRefresh: Boolean = false) = withContext(Dispatchers.IO) {
+        val contactLookupMap = HashMap<String, String>()
+        for (c in contacts) {
+            if (c.name.isNotBlank()) {
+                for (num in c.numbers) {
+                    val norm = normalizeNumber(num)
+                    if (norm.isNotBlank() && !contactLookupMap.containsKey(norm)) {
+                        contactLookupMap[norm] = c.name
+                    }
+                }
+            }
+        }
+
         if (!forceRefresh && isLoaded && _threads.value.isNotEmpty()) {
-            if (contacts.isNotEmpty()) {
+            if (contactLookupMap.isNotEmpty()) {
                 val updated = _threads.value.map { th ->
                     if (th.contactName.isNullOrBlank()) {
-                        val resolved = resolveContactName(th.displayAddress, contacts)
+                        val resolved = contactLookupMap[th.normalizedNumber] ?: resolveContactName(th.displayAddress, contacts, contactLookupMap)
                         if (resolved != null) th.copy(contactName = resolved) else th
                     } else th
                 }
@@ -132,6 +158,7 @@ class SmsRepository(private val context: Context) {
                                 body = body,
                                 timestamp = date,
                                 isOutgoing = isOut,
+                                isRead = read,
                                 status = status,
                                 isDelivered = isDelivered
                             )
@@ -145,7 +172,8 @@ class SmsRepository(private val context: Context) {
 
         val list = threadMap.map { (key, items) ->
             val latest = items.first()
-            val resolvedName = resolveContactName(latest.address, contacts)
+            val resolvedName = contactLookupMap[key] ?: resolveContactName(latest.address, contacts, contactLookupMap)
+            val unreadCount = items.count { !it.isRead && !it.isOutgoing }
 
             MessageThread(
                 normalizedNumber = key,
@@ -153,7 +181,7 @@ class SmsRepository(private val context: Context) {
                 contactName = resolvedName,
                 latestBody = latest.body,
                 latestTimestamp = latest.timestamp,
-                unreadCount = items.count { !it.isOutgoing },
+                unreadCount = unreadCount,
                 threadIds = emptyList(),
                 isOutgoing = latest.isOutgoing,
                 isDelivered = latest.isDelivered
@@ -162,6 +190,29 @@ class SmsRepository(private val context: Context) {
 
         _threads.value = list
         isLoaded = true
+    }
+
+    suspend fun markThreadAsRead(displayAddress: String) = withContext(Dispatchers.IO) {
+        val norm = normalizeNumber(displayAddress)
+        try {
+            val values = ContentValues().apply {
+                put("read", 1)
+                put("seen", 1)
+            }
+            context.contentResolver.update(
+                Telephony.Sms.CONTENT_URI,
+                values,
+                "read = 0 AND (address = ? OR address LIKE ?)",
+                arrayOf(displayAddress, "%$norm")
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        _threads.value = _threads.value.map { th ->
+            if (th.normalizedNumber == norm || th.displayAddress == displayAddress) {
+                th.copy(unreadCount = 0)
+            } else th
+        }
     }
 
     fun updateThreadOptimistic(address: String, body: String, contactName: String?) {

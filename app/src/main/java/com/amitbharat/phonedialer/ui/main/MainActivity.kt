@@ -107,12 +107,61 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Kept light: do not reload/re-sync everything on every resume to ensure instant navigation
+    private val contentObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean, uri: android.net.Uri?) {
+            autoSyncAllData()
+        }
     }
 
+    private var lastAutoSyncTime = 0L
+    private fun autoSyncAllData(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && (now - lastAutoSyncTime < 4000)) return // debounce rapid content observer updates
+        lastAutoSyncTime = now
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+                    val freshContacts = contactsRepo.fetchDeviceContactsDirectly()
+                    if (freshContacts.isNotEmpty()) {
+                        ContactsRepository.updateCachedContacts(freshContacts)
+                    }
+                }
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
+                    val freshLogs = callLogRepo.fetchDeviceCallLogsDirectly()
+                    if (freshLogs.isNotEmpty()) {
+                        CallLogRepository.updateCachedCallLogs(freshLogs)
+                    }
+                }
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+                    com.amitbharat.phonedialer.repository.SmsRepository.getInstance(this@MainActivity)
+                        .loadThreads(contactsRepo.getCachedContacts(), forceRefresh = true)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkDefaultDialerRole()
+        autoSyncAllData()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            contentResolver.unregisterContentObserver(contentObserver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private var hasCheckedDefaultDialer = false
+
     private fun checkDefaultDialerRole() {
+        if (hasCheckedDefaultDialer) return
+        hasCheckedDefaultDialer = true
         if (!TelecomHelper.isDefaultDialer(this)) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val roleManager = getSystemService(Context.ROLE_SERVICE) as? RoleManager
@@ -153,11 +202,16 @@ class MainActivity : ComponentActivity() {
         if (needed.isNotEmpty()) {
             permissionLauncher.launch(needed.toTypedArray())
         } else {
-            lifecycleScope.launch {
-                contactsRepo.syncDeviceContacts()
-                callLogRepo.syncDeviceCallLogs()
-            }
+            autoSyncAllData(force = true)
             checkDefaultDialerRole()
+        }
+
+        try {
+            contentResolver.registerContentObserver(android.provider.ContactsContract.Contacts.CONTENT_URI, true, contentObserver)
+            contentResolver.registerContentObserver(android.provider.CallLog.Calls.CONTENT_URI, true, contentObserver)
+            contentResolver.registerContentObserver(android.provider.Telephony.Sms.CONTENT_URI, true, contentObserver)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }
