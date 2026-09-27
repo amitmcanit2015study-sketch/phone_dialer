@@ -83,7 +83,9 @@
             android:name=".ui.incall.InCallActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.amitbharat.phonedialer.incall"
+            android:excludeFromRecents="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@style/Theme.PhoneDialer.InCall" />
@@ -154,6 +156,11 @@
         <!-- Notification actions receiver (Mark Read, Inline Reply) -->
         <receiver
             android:name=".receiver.SmsActionReceiver"
+            android:exported="false" />
+
+        <!-- Notification call actions receiver (Hangup, Reject) -->
+        <receiver
+            android:name=".receiver.CallNotificationReceiver"
             android:exported="false" />
 
         <!-- Persistent Background Keep-Alive Service -->

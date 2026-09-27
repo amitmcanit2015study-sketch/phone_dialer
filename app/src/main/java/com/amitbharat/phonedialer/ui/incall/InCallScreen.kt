@@ -9,6 +9,7 @@ import android.telephony.SmsManager
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -40,6 +41,7 @@ import com.amitbharat.phonedialer.recording.CallRecorder
 import com.amitbharat.phonedialer.repository.CallLogRepository
 import com.amitbharat.phonedialer.telecom.ActiveCallState
 import com.amitbharat.phonedialer.telecom.CallManager
+import com.amitbharat.phonedialer.telecom.DialerInCallService
 import com.amitbharat.phonedialer.ui.theme.AccentGreen
 import com.amitbharat.phonedialer.ui.theme.AccentRed
 import com.amitbharat.phonedialer.ui.theme.PhoneDialerTheme
@@ -62,6 +64,14 @@ class InCallActivity : ComponentActivity() {
             @Suppress("DEPRECATION") WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
             @Suppress("DEPRECATION") WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
         )
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                moveTaskToBack(true)
+            }
+        })
+
+        handleIntent(intent)
 
         callRecorder = CallRecorder(this)
         val prefs = PreferencesManager.getInstance(this)
@@ -167,6 +177,18 @@ class InCallActivity : ComponentActivity() {
                     }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == DialerInCallService.ACTION_ANSWER) {
+            CallManager.answerCall()
         }
     }
 }

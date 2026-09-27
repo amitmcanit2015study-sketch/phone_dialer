@@ -1,5 +1,6 @@
 package com.amitbharat.phonedialer.telecom
 
+import android.app.ActivityOptions
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -16,6 +17,7 @@ import android.telecom.InCallService
 import android.telecom.TelecomManager
 import androidx.core.app.NotificationCompat
 import com.amitbharat.phonedialer.R
+import com.amitbharat.phonedialer.receiver.CallNotificationReceiver
 import com.amitbharat.phonedialer.ui.incall.InCallActivity
 import com.amitbharat.phonedialer.utils.PreferencesManager
 
@@ -162,30 +164,52 @@ class DialerInCallService : InCallService(), SensorEventListener {
             null
         }
 
+        // Target InCallActivity with flags to bring any existing instance immediately to front
         val activityIntent = Intent(this, InCallActivity::class.java).apply {
-            this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
         }
+
+        // On Android 14+ (API 34+), explicitly allow PendingIntent to start activity from background
+        val activityOptions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ActivityOptions.makeBasic().apply {
+                pendingIntentBackgroundActivityStartMode =
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+            }.toBundle()
+        } else {
+            null
+        }
+
         val pendingActivityIntent = PendingIntent.getActivity(
             this, 0, activityIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            activityOptions
         )
 
         if (isIncoming) {
             // Incoming Call Notification (Getting call)
-            val rejectIntent = Intent(this, DialerInCallService::class.java).apply {
+            // Use BroadcastReceiver to decline reliably in background without service permission / background limits
+            val rejectIntent = Intent(this, CallNotificationReceiver::class.java).apply {
                 action = ACTION_REJECT
             }
-            val pendingRejectIntent = PendingIntent.getService(
+            val pendingRejectIntent = PendingIntent.getBroadcast(
                 this, 1, rejectIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val answerIntent = Intent(this, DialerInCallService::class.java).apply {
+            val answerIntent = Intent(this, InCallActivity::class.java).apply {
                 action = ACTION_ANSWER
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             }
-            val pendingAnswerIntent = PendingIntent.getService(
+            val pendingAnswerIntent = PendingIntent.getActivity(
                 this, 2, answerIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                activityOptions
+            )
+
+            val pendingFullScreenIntent = PendingIntent.getActivity(
+                this, 10, activityIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                activityOptions
             )
 
             val notification = NotificationCompat.Builder(this, INCOMING_CHANNEL_ID)
@@ -199,7 +223,7 @@ class DialerInCallService : InCallService(), SensorEventListener {
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setFullScreenIntent(pendingActivityIntent, true) // Required to wake screen and show UI on lockscreen
+                .setFullScreenIntent(pendingFullScreenIntent, true) // Required to wake screen and show UI on lockscreen
                 .setContentIntent(pendingActivityIntent)
                 .addAction(R.drawable.ic_call_end, "Decline", pendingRejectIntent)
                 .addAction(R.drawable.ic_call, "Answer", pendingAnswerIntent)
@@ -208,12 +232,22 @@ class DialerInCallService : InCallService(), SensorEventListener {
             startForeground(NOTIFICATION_ID, notification)
         } else {
             // Outgoing / Active / Ongoing Call Notification (Making call, In-call, On hold)
-            val hangupIntent = Intent(this, DialerInCallService::class.java).apply {
+            // Use BroadcastReceiver to hang up reliably in background without service permission / background limits
+            val hangupIntent = Intent(this, CallNotificationReceiver::class.java).apply {
                 action = ACTION_HANGUP
             }
-            val pendingHangupIntent = PendingIntent.getService(
+            val pendingHangupIntent = PendingIntent.getBroadcast(
                 this, 3, hangupIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val returnIntent = Intent(this, InCallActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            }
+            val pendingReturnIntent = PendingIntent.getActivity(
+                this, 4, returnIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                activityOptions
             )
 
             val statusText = when {
@@ -232,7 +266,7 @@ class DialerInCallService : InCallService(), SensorEventListener {
                 .setPriority(if (isDialing) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setContentIntent(pendingActivityIntent)
-                .addAction(R.drawable.ic_call, "Return to Call", pendingActivityIntent)
+                .addAction(R.drawable.ic_call, "Return to Call", pendingReturnIntent)
                 .addAction(R.drawable.ic_call_end, "End Call", pendingHangupIntent)
                 .build()
 
