@@ -52,24 +52,25 @@ fun ContactsScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    var hasImeOpened by remember { mutableStateOf(false) }
-    val isImeVisible = WindowInsets.isImeVisible
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    var keyboardEverOpened by remember { mutableStateOf(false) }
 
     LaunchedEffect(isSearchOpen) {
         onSearchActive(isSearchOpen)
         if (isSearchOpen) {
-            hasImeOpened = false
+            keyboardEverOpened = false
             focusRequester.requestFocus()
         } else {
-            hasImeOpened = false
+            keyboardEverOpened = false
         }
     }
 
-    LaunchedEffect(isImeVisible, isSearchOpen) {
+    LaunchedEffect(imeBottom, isSearchOpen) {
         if (isSearchOpen) {
-            if (isImeVisible) {
-                hasImeOpened = true
-            } else if (hasImeOpened) {
+            if (imeBottom > 200) {
+                keyboardEverOpened = true
+            } else if (keyboardEverOpened && imeBottom == 0) {
                 // When keyboard is hidden, automatically close search box (Req)
                 isSearchOpen = false
                 searchQuery = ""
@@ -234,6 +235,7 @@ fun ContactsScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        .imePadding()
                         .navigationBarsPadding()
                 ) {
                     Row(
