@@ -93,17 +93,26 @@ class MainActivity : ComponentActivity() {
             var themeMode by remember { mutableStateOf(prefs.getThemeMode()) }
             var isAppLoading by remember { mutableStateOf(true) }
 
-            LaunchedEffect(Unit) {
-                kotlinx.coroutines.delay(1200)
-                isAppLoading = false
-            }
-
             val contacts by contactsRepo.getAllContacts().collectAsState(initial = contactsRepo.getCachedContacts())
             val favorites = remember(contacts) { contacts.filter { it.isFavorite } }
             val callLogs by callLogRepo.getAllCallLogs().collectAsState(initial = callLogRepo.getCachedCallLogs())
             val speedDials by callLogRepo.getSpeedDials().collectAsState(initial = emptyList())
             val targetTab by targetTabState
             val targetChatAddress by targetChatAddressState
+
+            // Ultra-fast loading: dismiss splash as soon as initial cache or first batch is available
+            LaunchedEffect(contacts, callLogs) {
+                if (contacts.isNotEmpty() || callLogs.isNotEmpty()) {
+                    kotlinx.coroutines.delay(200)
+                    isAppLoading = false
+                }
+            }
+
+            // Fallback safety timeout so app always opens within 350ms
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(350)
+                isAppLoading = false
+            }
 
             PhoneDialerTheme(themeMode = themeMode) {
                 Crossfade(targetState = isAppLoading, label = "AppLoadingTransition") { loading ->

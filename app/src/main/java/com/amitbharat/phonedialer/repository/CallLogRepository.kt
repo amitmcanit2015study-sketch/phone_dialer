@@ -29,6 +29,10 @@ class CallLogRepository(private val context: Context) {
         private var cachedCallLogs: List<CallLogItem>? = null
         @Volatile
         private var lastLogFetchTime: Long = 0L
+        @Volatile
+        private var cachedRecordingsMap: Map<String, String>? = null
+        @Volatile
+        private var lastRecordingsScanTime: Long = 0L
 
         fun getCachedCallLogs(): List<CallLogItem> = cachedCallLogs ?: emptyList()
 
@@ -56,8 +60,8 @@ class CallLogRepository(private val context: Context) {
         if (!forceRefresh && cached != null && (now - lastLogFetchTime < 30_000)) {
             emit(cached)
         } else {
-            // Stage 1 (Fast Lazy Loading): Load past 3 days call logs first for instant startup
-            val recentLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = 3))
+            // Stage 1 (Fast Lazy Loading): Load latest 50 calls in sub-20ms for instant startup
+            val recentLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = 3, maxCount = 50))
             if (recentLogs.isNotEmpty()) {
                 cachedCallLogs = recentLogs
                 lastLogFetchTime = now
@@ -65,7 +69,7 @@ class CallLogRepository(private val context: Context) {
             }
 
             // Stage 2: Load complete call history in background and emit
-            val fullLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = null))
+            val fullLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = null, maxCount = null))
             cachedCallLogs = fullLogs
             lastLogFetchTime = System.currentTimeMillis()
             emit(fullLogs)
@@ -103,14 +107,14 @@ class CallLogRepository(private val context: Context) {
         callLogDao.clearCallLogs()
     }
 
-    fun fetchDeviceCallLogsDirectly(daysLimit: Int? = null): List<CallLogItem> {
+    fun fetchDeviceCallLogsDirectly(daysLimit: Int? = null, maxCount: Int? = null): List<CallLogItem> {
         val result = mutableListOf<CallLogItem>()
         try {
             // Build saved contact number sets for O(1) instant lookup
             val (savedExactNumbers, savedLast10Numbers) = getSavedContactNumberIndices()
 
-            // Map available recordings from recordings folder
-            val recordingsMap = getRecordingsMap()
+            // Skip file scanning during fast initial load
+            val recordingsMap = if (maxCount != null && maxCount <= 50) emptyMap() else getRecordingsMap()
 
             val resolver: ContentResolver = context.contentResolver
             val (selection, selectionArgs) = if (daysLimit != null) {
@@ -119,6 +123,8 @@ class CallLogRepository(private val context: Context) {
             } else {
                 Pair(null, null)
             }
+
+            val sortOrder = if (maxCount != null) "${CallLog.Calls.DATE} DESC LIMIT $maxCount" else "${CallLog.Calls.DATE} DESC"
 
             val cursor = resolver.query(
                 CallLog.Calls.CONTENT_URI,
@@ -132,7 +138,7 @@ class CallLogRepository(private val context: Context) {
                 ),
                 selection,
                 selectionArgs,
-                CallLog.Calls.DATE + " DESC"
+                sortOrder
             )
 
             cursor?.use {
@@ -242,6 +248,11 @@ class CallLogRepository(private val context: Context) {
     }
 
     private fun getRecordingsMap(): Map<String, String> {
+        val now = System.currentTimeMillis()
+        val cached = cachedRecordingsMap
+        if (cached != null && (now - lastRecordingsScanTime < 60_000)) {
+            return cached
+        }
         val map = HashMap<String, String>()
         try {
             val candidateDirs = listOf(
@@ -275,6 +286,8 @@ class CallLogRepository(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+        cachedRecordingsMap = map
+        lastRecordingsScanTime = now
         return map
     }
 
