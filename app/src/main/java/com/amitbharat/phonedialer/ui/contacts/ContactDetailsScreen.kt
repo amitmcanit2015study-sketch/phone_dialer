@@ -72,6 +72,37 @@ fun ContactDetailsScreen(
         .sortedByDescending { it.timestamp }
     }
 
+    var selectedFilter by remember { mutableStateOf<CallType?>(null) } // null = All
+    var visibleLimit by remember { mutableIntStateOf(15) }
+
+    LaunchedEffect(selectedFilter) {
+        visibleLimit = 15
+    }
+
+    val missedCount = remember(filteredLogs) {
+        filteredLogs.count { it.callType == CallType.MISSED || it.callType == CallType.REJECTED }
+    }
+    val outgoingCount = remember(filteredLogs) {
+        filteredLogs.count { it.callType == CallType.OUTGOING }
+    }
+    val incomingCount = remember(filteredLogs) {
+        filteredLogs.count { it.callType == CallType.INCOMING }
+    }
+
+    val displayedLogs = remember(filteredLogs, selectedFilter) {
+        when (selectedFilter) {
+            null -> filteredLogs
+            CallType.MISSED -> filteredLogs.filter { it.callType == CallType.MISSED || it.callType == CallType.REJECTED }
+            CallType.OUTGOING -> filteredLogs.filter { it.callType == CallType.OUTGOING }
+            CallType.INCOMING -> filteredLogs.filter { it.callType == CallType.INCOMING }
+            else -> filteredLogs.filter { it.callType == selectedFilter }
+        }
+    }
+
+    val pagedLogs = remember(displayedLogs, visibleLimit) {
+        displayedLogs.take(visibleLimit)
+    }
+
     val totalDuration = remember(filteredLogs) { filteredLogs.sumOf { it.duration } }
     val totalMins = totalDuration / 60
     val totalSecs = totalDuration % 60
@@ -285,25 +316,64 @@ fun ContactDetailsScreen(
                 }
             }
 
-            // Timeline Header
+            // Timeline Header & Filters
             item {
-                Text(
-                    text = "CALL HISTORY TIMELINE (${filteredLogs.size})",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 12.dp, bottom = 6.dp, start = 4.dp)
-                )
+                Column(modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)) {
+                    Text(
+                        text = "CALL HISTORY (${displayedLogs.size})",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    )
+
+                    // Filter Chips Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedFilter == null,
+                            onClick = { selectedFilter = null },
+                            label = { Text("All (${filteredLogs.size})", fontSize = 12.sp) }
+                        )
+                        if (missedCount > 0) {
+                            FilterChip(
+                                selected = selectedFilter == CallType.MISSED,
+                                onClick = { selectedFilter = CallType.MISSED },
+                                label = { Text("Missed ($missedCount)", fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = AccentRed.copy(alpha = 0.2f),
+                                    selectedLabelColor = AccentRed
+                                )
+                            )
+                        }
+                        if (outgoingCount > 0) {
+                            FilterChip(
+                                selected = selectedFilter == CallType.OUTGOING,
+                                onClick = { selectedFilter = CallType.OUTGOING },
+                                label = { Text("Dialed ($outgoingCount)", fontSize = 12.sp) }
+                            )
+                        }
+                        if (incomingCount > 0) {
+                            FilterChip(
+                                selected = selectedFilter == CallType.INCOMING,
+                                onClick = { selectedFilter = CallType.INCOMING },
+                                label = { Text("Received ($incomingCount)", fontSize = 12.sp) }
+                            )
+                        }
+                    }
+                }
             }
 
-            if (filteredLogs.isEmpty()) {
+            if (displayedLogs.isEmpty()) {
                 item {
                     Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        Text("No call history recorded for this contact", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                        Text("No call history recorded for this filter", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                     }
                 }
             } else {
-                items(filteredLogs, key = { it.id }) { log ->
+                items(pagedLogs, key = { it.id }) { log ->
                     val (icon, tint, label) = when (log.callType) {
                         CallType.INCOMING -> Triple(Icons.AutoMirrored.Filled.CallReceived, AccentGreen, "Incoming Call")
                         CallType.OUTGOING -> Triple(Icons.AutoMirrored.Filled.CallMade, Color(0xFF3B82F6), "Outgoing Call")
@@ -355,6 +425,41 @@ fun ContactDetailsScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = if (log.duration > 0) MaterialTheme.colorScheme.onSurface else AccentRed
                             )
+                        }
+                    }
+                }
+
+                // Lazy Loading Button when there are more calls
+                if (displayedLogs.size > pagedLogs.size) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                                .clickable { visibleLimit += 20 },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 12.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = "Load More Calls (${pagedLogs.size} of ${displayedLogs.size})",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                         }
                     }
                 }

@@ -43,10 +43,12 @@ class ContactsRepository(private val context: Context) {
         val result = mutableListOf<Contact>()
         for (c in contacts) {
             val normName = c.name.trim().lowercase()
-            val primaryNum = c.numbers.firstOrNull()?.replace(Regex("[^0-9+]"), "") ?: ""
+            val validNumbers = c.numbers.filter { num -> num.filter { it.isDigit() }.length >= 3 }.distinct()
+            if (validNumbers.isEmpty()) continue
+            val primaryNum = validNumbers.first().replace(Regex("[^0-9+]"), "")
             val key = if (normName.isNotBlank() && normName != "unknown") normName else primaryNum
             if (key.isNotBlank() && seen.add(key)) {
-                result.add(c.copy(numbers = c.numbers.distinct()))
+                result.add(c.copy(numbers = validNumbers))
             }
         }
         return result
@@ -179,7 +181,8 @@ class ContactsRepository(private val context: Context) {
                     val isStarred = if (starIdx >= 0) it.getInt(starIdx) == 1 else false
                     val contactId = if (idIdx >= 0) it.getLong(idIdx) else 0L
 
-                    if (number.isNotBlank()) {
+                    val digitsOnly = number.filter { it.isDigit() }
+                    if (number.isNotBlank() && digitsOnly.length >= 3) {
                         contactMap.getOrPut(normKey) { mutableListOf() }.add(number)
                         displayNameMap[normKey] = name
                         if (photo != null && photoMap[normKey] == null) photoMap[normKey] = photo

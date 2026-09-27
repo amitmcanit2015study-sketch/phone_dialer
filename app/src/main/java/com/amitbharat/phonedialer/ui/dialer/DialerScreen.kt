@@ -176,26 +176,38 @@ fun DialerScreen(
         val result = LinkedHashMap<String, List<DayConsolidatedLog>>()
 
         dayBuckets.forEach { (dayKey, itemsInDay) ->
-            // Group by contactKey + "_" + callType so dialed, missed, and received calls for the same number are shown as separate entries with counts
+            // Group by contact identity + callType so all calls of same type to/from same contact consolidate into 1 entry
             val groupMap = LinkedHashMap<String, MutableList<CallLogItem>>()
             for (item in itemsInDay) {
                 val cleanNum = item.number.replace(Regex("[^0-9+]"), "")
-                val contactKey = item.name?.trim()?.ifBlank { null } ?: if (cleanNum.length >= 10) cleanNum.takeLast(10) else cleanNum
+                val digitsOnly = item.number.filter { it.isDigit() }
+                val last10 = if (digitsOnly.length >= 10) digitsOnly.takeLast(10) else digitsOnly
+
+                // Canonical contact matching: Contact ID or last10 digits or cleaned number
+                val matchedContact = savedNumberMap[cleanNum] ?: if (last10.isNotBlank()) savedNumberMap[last10] else null
+                val contactIdentity = matchedContact?.id?.toString()
+                    ?: if (last10.isNotBlank()) last10
+                    else if (cleanNum.isNotBlank()) cleanNum
+                    else (item.name?.trim()?.ifBlank { null } ?: item.number)
+
                 val normalizedType = when (item.callType) {
                     CallType.REJECTED -> CallType.MISSED
                     else -> item.callType
                 }
-                val groupKey = "${contactKey}_${normalizedType.name}"
+                val groupKey = "${contactIdentity}_${normalizedType.name}"
                 groupMap.getOrPut(groupKey) { mutableListOf() }.add(item)
             }
 
             val consolidatedList = mutableListOf<DayConsolidatedLog>()
             groupMap.values.forEach { items ->
-                val first = items.first()
+                val sortedItems = items.sortedByDescending { it.timestamp }
+                val first = sortedItems.first()
                 val cleanNum = first.number.replace(Regex("[^0-9+]"), "")
-                val matchedContact = savedNumberMap[cleanNum] ?: if (cleanNum.length >= 10) savedNumberMap[cleanNum.takeLast(10)] else null
+                val digitsOnly = first.number.filter { it.isDigit() }
+                val last10 = if (digitsOnly.length >= 10) digitsOnly.takeLast(10) else digitsOnly
+                val matchedContact = savedNumberMap[cleanNum] ?: if (last10.isNotBlank()) savedNumberMap[last10] else null
                 val isSaved = matchedContact != null || first.isSavedContact
-                val recPath = items.firstOrNull { !it.recordingPath.isNullOrBlank() }?.recordingPath
+                val recPath = sortedItems.firstOrNull { !it.recordingPath.isNullOrBlank() }?.recordingPath
 
                 consolidatedList.add(
                     DayConsolidatedLog(
@@ -205,16 +217,16 @@ fun DialerScreen(
                         number = first.number,
                         latestTimestamp = first.timestamp,
                         callType = first.callType,
-                        count = items.size,
-                        totalDuration = items.sumOf { it.duration },
+                        count = sortedItems.size,
+                        totalDuration = sortedItems.sumOf { it.duration },
                         hasRecording = recPath != null,
                         recordingPath = recPath,
                         isSavedContact = isSaved,
-                        calls = items
+                        calls = sortedItems
                     )
                 )
             }
-            result[dayKey] = consolidatedList
+            result[dayKey] = consolidatedList.sortedByDescending { it.latestTimestamp }
         }
         result
     }

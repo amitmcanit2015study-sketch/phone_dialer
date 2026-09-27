@@ -41,7 +41,10 @@ class CallLogRepository(private val context: Context) {
     fun getCachedCallLogs(): List<CallLogItem> = cachedCallLogs ?: emptyList()
 
     private fun deduplicateLogs(logs: List<CallLogItem>): List<CallLogItem> {
-        return logs.distinctBy { item ->
+        return logs.filter { item ->
+            val digitsOnly = item.number.filter { it.isDigit() }
+            digitsOnly.length >= 3
+        }.distinctBy { item ->
             val cleanNum = item.number.replace(Regex("[^0-9+]"), "")
             "${cleanNum}_${item.timestamp}_${item.callType.name}_${item.duration}"
         }.sortedByDescending { it.timestamp }
@@ -154,12 +157,18 @@ class CallLogRepository(private val context: Context) {
                         CallLog.Calls.MISSED_TYPE -> CallType.MISSED
                         CallLog.Calls.REJECTED_TYPE -> CallType.REJECTED
                         CallLog.Calls.BLOCKED_TYPE -> CallType.BLOCKED
-                        else -> CallType.INCOMING
+                        else -> null // Reject OEM SMS/MMS types or unknown types
                     }
 
+                    // Only process recognized call types
+                    if (callType == null) continue
+
                     if (number.isNotBlank()) {
+                        val digitsOnly = number.filter { it.isDigit() }
+                        // Filter out SMS sender IDs or non-dialable short codes without digits
+                        if (digitsOnly.length < 3) continue
+
                         val cleanNum = number.replace(Regex("[^0-9+]"), "")
-                        val digitsOnly = number.replace(Regex("[^0-9]"), "")
                         val last10 = if (digitsOnly.length >= 10) digitsOnly.takeLast(10) else digitsOnly
                         val isSaved = savedExactNumbers.contains(cleanNum) || 
                                       (last10.isNotBlank() && savedLast10Numbers.contains(last10))

@@ -13,7 +13,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import com.amitbharat.phonedialer.R
 import com.amitbharat.phonedialer.model.CallLogItem
 import com.amitbharat.phonedialer.model.Contact
 import com.amitbharat.phonedialer.repository.CallLogRepository
@@ -77,6 +91,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var themeMode by remember { mutableStateOf(prefs.getThemeMode()) }
+            var isAppLoading by remember { mutableStateOf(true) }
+
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(1200)
+                isAppLoading = false
+            }
 
             val contacts by contactsRepo.getAllContacts().collectAsState(initial = contactsRepo.getCachedContacts())
             val favorites = remember(contacts) { contacts.filter { it.isFavorite } }
@@ -86,40 +106,106 @@ class MainActivity : ComponentActivity() {
             val targetChatAddress by targetChatAddressState
 
             PhoneDialerTheme(themeMode = themeMode) {
-                MainScreen(
-                    contacts = contacts,
-                    favorites = favorites,
-                    callLogs = callLogs,
-                    speedDials = speedDials,
-                    initialTab = targetTab,
-                    initialChatAddress = targetChatAddress,
-                    onCallClick = { number, sim ->
-                        TelecomHelper.makeCall(this@MainActivity, number, sim)
-                    },
-                    onAddContact = { contact ->
-                        lifecycleScope.launch { contactsRepo.addContact(contact) }
-                    },
-                    onToggleFavorite = { contact ->
-                        lifecycleScope.launch {
-                            contactsRepo.updateContact(contact.copy(isFavorite = !contact.isFavorite))
+                Crossfade(targetState = isAppLoading, label = "AppLoadingTransition") { loading ->
+                    if (loading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp)
+                            ) {
+                                Spacer(Modifier.weight(1f))
+
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_retro_phone),
+                                    contentDescription = "App Icon",
+                                    modifier = Modifier
+                                        .size(110.dp)
+                                        .clip(RoundedCornerShape(26.dp))
+                                )
+
+                                Spacer(Modifier.height(20.dp))
+
+                                Text(
+                                    text = "Phone Dialer",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 26.sp,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+
+                                Spacer(Modifier.height(30.dp))
+
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(36.dp),
+                                    strokeWidth = 3.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                Spacer(Modifier.weight(1f))
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.padding(bottom = 32.dp)
+                                ) {
+                                    Text(
+                                        text = "Developed by",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(
+                                        text = "Amit Bharat",
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         }
-                    },
-                    onDeleteContact = { contact ->
-                        lifecycleScope.launch { contactsRepo.deleteContact(contact) }
-                    },
-                    onDeleteCallLog = { id ->
-                        lifecycleScope.launch { callLogRepo.deleteCallLog(id) }
-                    },
-                    onSyncDeviceContacts = {
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            contactsRepo.syncDeviceContacts()
-                            callLogRepo.syncDeviceCallLogs()
-                            com.amitbharat.phonedialer.repository.SmsRepository.getInstance(this@MainActivity)
-                                .loadThreads(contactsRepo.getCachedContacts(), forceRefresh = true)
-                        }
-                    },
-                    onThemeChange = { mode -> themeMode = mode }
-                )
+                    } else {
+                        MainScreen(
+                            contacts = contacts,
+                            favorites = favorites,
+                            callLogs = callLogs,
+                            speedDials = speedDials,
+                            initialTab = targetTab,
+                            initialChatAddress = targetChatAddress,
+                            onCallClick = { number, sim ->
+                                TelecomHelper.makeCall(this@MainActivity, number, sim)
+                            },
+                            onAddContact = { contact ->
+                                lifecycleScope.launch { contactsRepo.addContact(contact) }
+                            },
+                            onToggleFavorite = { contact ->
+                                lifecycleScope.launch {
+                                    contactsRepo.updateContact(contact.copy(isFavorite = !contact.isFavorite))
+                                }
+                            },
+                            onDeleteContact = { contact ->
+                                lifecycleScope.launch { contactsRepo.deleteContact(contact) }
+                            },
+                            onDeleteCallLog = { id ->
+                                lifecycleScope.launch { callLogRepo.deleteCallLog(id) }
+                            },
+                            onSyncDeviceContacts = {
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    contactsRepo.syncDeviceContacts()
+                                    callLogRepo.syncDeviceCallLogs()
+                                    com.amitbharat.phonedialer.repository.SmsRepository.getInstance(this@MainActivity)
+                                        .loadThreads(contactsRepo.getCachedContacts(), forceRefresh = true)
+                                }
+                            },
+                            onThemeChange = { mode -> themeMode = mode }
+                        )
+                    }
+                }
             }
         }
     }
