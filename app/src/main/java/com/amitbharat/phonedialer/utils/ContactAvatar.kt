@@ -41,6 +41,7 @@ fun ContactAvatar(
     photoUri: String? = null,
     size: Dp = 48.dp,
     fontSize: TextUnit = 18.sp,
+    shape: androidx.compose.ui.graphics.Shape = CircleShape,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -73,13 +74,13 @@ fun ContactAvatar(
             contentScale = ContentScale.Crop,
             modifier = modifier
                 .size(size)
-                .clip(CircleShape)
+                .clip(shape)
         )
     } else {
         Box(
             modifier = modifier
                 .size(size)
-                .clip(CircleShape)
+                .clip(shape)
                 .background(Brush.linearGradient(listOf(gradientColors.first, gradientColors.second))),
             contentAlignment = Alignment.Center
         ) {

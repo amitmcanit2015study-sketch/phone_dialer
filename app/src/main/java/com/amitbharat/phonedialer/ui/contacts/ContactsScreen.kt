@@ -310,13 +310,13 @@ fun ContactItemRow(
                         },
                         modifier = Modifier
                             .size(36.dp)
-                            .background(Color(0xFF25D366).copy(alpha = 0.16f), CircleShape)
+                            .background(Color(0xFFE8F8EE), CircleShape)
                     ) {
                         Icon(
                             painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
                             contentDescription = "WhatsApp",
                             tint = Color(0xFF25D366),
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     Spacer(Modifier.width(4.dp))
@@ -326,9 +326,14 @@ fun ContactItemRow(
                     onClick = onMessageClick,
                     modifier = Modifier
                         .size(36.dp)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                        .background(Color(0xFFE0F2FE), CircleShape)
                 ) {
-                    Icon(Icons.Default.Message, contentDescription = "Message", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.Message,
+                        contentDescription = "Message",
+                        tint = Color(0xFF0284C7),
+                        modifier = Modifier.size(19.dp)
+                    )
                 }
                 Spacer(Modifier.width(4.dp))
 
@@ -336,9 +341,14 @@ fun ContactItemRow(
                     onClick = onCallClick,
                     modifier = Modifier
                         .size(36.dp)
-                        .background(AccentGreen.copy(alpha = 0.18f), CircleShape)
+                        .background(Color(0xFFD1FAE5), CircleShape)
                 ) {
-                    Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(19.dp))
+                    Icon(
+                        Icons.Default.Call,
+                        contentDescription = "Call",
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         }

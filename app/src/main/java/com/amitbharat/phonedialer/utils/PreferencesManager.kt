@@ -82,6 +82,38 @@ class PreferencesManager private constructor(context: Context) {
     fun isAutoDeleteOldMessagesEnabled(): Boolean = prefs.getBoolean("sms_auto_delete_old", false)
     fun setAutoDeleteOldMessagesEnabled(enabled: Boolean) = prefs.edit().putBoolean("sms_auto_delete_old", enabled).apply()
 
+    // Advanced Message Settings
+    fun isUseSimpleCharactersEnabled(): Boolean = prefs.getBoolean("sms_use_simple_chars", false)
+    fun setUseSimpleCharactersEnabled(enabled: Boolean) = prefs.edit().putBoolean("sms_use_simple_chars", enabled).apply()
+
+    fun isShowIphoneReactionsEnabled(): Boolean = prefs.getBoolean("sms_show_iphone_reactions", true)
+    fun setShowIphoneReactionsEnabled(enabled: Boolean) = prefs.edit().putBoolean("sms_show_iphone_reactions", enabled).apply()
+
+    // Advanced Call Settings
+    fun getCallRecordingMode(): String = prefs.getString("call_record_mode", "ALL") ?: "ALL"
+    fun setCallRecordingMode(mode: String) = prefs.edit().putString("call_record_mode", mode).apply()
+
+    fun isFlipToSilenceEnabled(): Boolean = prefs.getBoolean("flip_to_silence", true)
+    fun setFlipToSilenceEnabled(enabled: Boolean) = prefs.edit().putBoolean("flip_to_silence", enabled).apply()
+
+    fun isCallerIdAnnouncementEnabled(): Boolean = prefs.getBoolean("caller_id_announce", false)
+    fun setCallerIdAnnouncementEnabled(enabled: Boolean) = prefs.edit().putBoolean("caller_id_announce", enabled).apply()
+
+    fun isAssistedDialingEnabled(): Boolean = prefs.getBoolean("assisted_dialing", true)
+    fun setAssistedDialingEnabled(enabled: Boolean) = prefs.edit().putBoolean("assisted_dialing", enabled).apply()
+
+    fun getBlockedNumbers(): Set<String> = prefs.getStringSet("blocked_numbers", emptySet()) ?: emptySet()
+    fun addBlockedNumber(number: String) {
+        val set = getBlockedNumbers().toMutableSet()
+        set.add(number)
+        prefs.edit().putStringSet("blocked_numbers", set).apply()
+    }
+    fun removeBlockedNumber(number: String) {
+        val set = getBlockedNumbers().toMutableSet()
+        set.remove(number)
+        prefs.edit().putStringSet("blocked_numbers", set).apply()
+    }
+
     fun getQuickResponses(): List<String> {
         val set = prefs.getStringSet("sms_quick_responses", null)
         return if (set != null && set.isNotEmpty()) {

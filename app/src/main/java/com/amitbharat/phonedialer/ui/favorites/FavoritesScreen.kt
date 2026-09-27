@@ -119,14 +119,14 @@ fun FavoritesScreen(
                                             com.amitbharat.phonedialer.utils.WhatsAppHelper.openWhatsAppChat(context, num)
                                         },
                                         modifier = Modifier
-                                            .size(38.dp)
-                                            .background(Color(0xFF25D366).copy(alpha = 0.16f), CircleShape)
+                                            .size(36.dp)
+                                            .background(Color(0xFFE8F8EE), CircleShape)
                                     ) {
                                         Icon(
                                             painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
                                             contentDescription = "WhatsApp",
                                             tint = Color(0xFF25D366),
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(19.dp)
                                         )
                                     }
                                 }
@@ -134,24 +134,24 @@ fun FavoritesScreen(
                                 IconButton(
                                     onClick = { onMessageClick(num) },
                                     modifier = Modifier
-                                        .size(38.dp)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                                        .size(36.dp)
+                                        .background(Color(0xFFE0F2FE), CircleShape)
                                 ) {
                                     Icon(
                                         Icons.Default.Message,
                                         contentDescription = "Message",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(19.dp)
+                                        tint = Color(0xFF0284C7),
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
 
                                 IconButton(
                                     onClick = { onCallClick(num) },
                                     modifier = Modifier
-                                        .size(38.dp)
-                                        .background(AccentGreen.copy(alpha = 0.18f), CircleShape)
+                                        .size(36.dp)
+                                        .background(Color(0xFFD1FAE5), CircleShape)
                                 ) {
-                                    Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Default.Call, contentDescription = "Call", tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
                                 }
                             }
                         }

@@ -216,25 +216,55 @@ fun DialerScreen(
         }
     }
 
-    fun playAudio(path: String) {
+    var activeMediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                activeMediaPlayer?.stop()
+                activeMediaPlayer?.release()
+            } catch (e: Exception) {}
+            activeMediaPlayer = null
+        }
+    }
+
+    fun togglePlayAudio(path: String) {
+        if (playingAudioPath == path) {
+            try {
+                activeMediaPlayer?.stop()
+                activeMediaPlayer?.release()
+            } catch (e: Exception) {}
+            activeMediaPlayer = null
+            playingAudioPath = null
+            return
+        }
+
         try {
+            activeMediaPlayer?.release()
+            activeMediaPlayer = null
+
             val file = File(path)
-            if (file.exists()) {
-                playingAudioPath = path
-                val mediaPlayer = MediaPlayer()
-                mediaPlayer.setDataSource(path)
-                mediaPlayer.prepare()
-                mediaPlayer.start()
-                mediaPlayer.setOnCompletionListener {
-                    playingAudioPath = null
-                    mediaPlayer.release()
+            if (file.exists() && file.length() > 0) {
+                val mp = MediaPlayer().apply {
+                    setDataSource(path)
+                    prepare()
+                    start()
+                    setOnCompletionListener {
+                        playingAudioPath = null
+                        it.release()
+                        activeMediaPlayer = null
+                    }
                 }
+                activeMediaPlayer = mp
+                playingAudioPath = path
                 Toast.makeText(context, "Playing recorded call audio…", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(context, "Recording file not found on disk", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Recording file empty or not found", Toast.LENGTH_SHORT).show()
+                playingAudioPath = null
             }
         } catch (e: Exception) {
             Toast.makeText(context, "Could not play recording: ${e.message}", Toast.LENGTH_SHORT).show()
+            playingAudioPath = null
         }
     }
 
@@ -490,26 +520,26 @@ fun DialerScreen(
                                             // If call is recorded, show play button
                                             if (group.hasRecording && group.recordingPath != null) {
                                                 IconButton(
-                                                    onClick = { playAudio(group.recordingPath) },
+                                                    onClick = { togglePlayAudio(group.recordingPath) },
                                                     modifier = Modifier
-                                                        .padding(end = 4.dp)
-                                                        .size(38.dp)
-                                                        .background(Color(0xFFF59E0B).copy(alpha = 0.15f), CircleShape)
+                                                        .size(36.dp)
+                                                        .background(Color(0xFFFEF3C7), CircleShape)
                                                 ) {
                                                     Icon(
-                                                        if (playingAudioPath == group.recordingPath) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                        if (playingAudioPath == group.recordingPath) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
                                                         contentDescription = "Play Recording",
-                                                        tint = Color(0xFFF59E0B),
-                                                        modifier = Modifier.size(20.dp)
+                                                        tint = Color(0xFFD97706),
+                                                        modifier = Modifier.size(24.dp)
                                                     )
                                                 }
+                                                Spacer(Modifier.width(4.dp))
                                             }
 
                                             // Action buttons sequence from the last: Call, Message, WhatsApp (Left to Right: WhatsApp -> Message -> Call)
                                             val isWhatsApp = com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(number = group.number)
 
                                             Row(
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 if (isWhatsApp) {
@@ -518,8 +548,8 @@ fun DialerScreen(
                                                             com.amitbharat.phonedialer.utils.WhatsAppHelper.openWhatsAppChat(context, group.number)
                                                         },
                                                         modifier = Modifier
-                                                            .size(38.dp)
-                                                            .background(Color(0xFF25D366).copy(alpha = 0.16f), CircleShape)
+                                                            .size(36.dp)
+                                                            .background(Color(0xFFE8F8EE), CircleShape)
                                                     ) {
                                                         Icon(
                                                             painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
@@ -533,13 +563,13 @@ fun DialerScreen(
                                                 IconButton(
                                                     onClick = { onMessageClick(group.number) },
                                                     modifier = Modifier
-                                                        .size(38.dp)
-                                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                                                        .size(36.dp)
+                                                        .background(Color(0xFFE0F2FE), CircleShape)
                                                 ) {
                                                     Icon(
-                                                        Icons.Default.Message,
+                                                        Icons.AutoMirrored.Filled.Message,
                                                         contentDescription = "Message",
-                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        tint = Color(0xFF0284C7),
                                                         modifier = Modifier.size(19.dp)
                                                     )
                                                 }
@@ -547,10 +577,15 @@ fun DialerScreen(
                                                 IconButton(
                                                     onClick = { onCallClick(group.number, 0) },
                                                     modifier = Modifier
-                                                        .size(38.dp)
-                                                        .background(AccentGreen.copy(alpha = 0.18f), CircleShape)
+                                                        .size(36.dp)
+                                                        .background(Color(0xFFD1FAE5), CircleShape)
                                                 ) {
-                                                    Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
+                                                    Icon(
+                                                        Icons.Default.Call,
+                                                        contentDescription = "Call",
+                                                        tint = Color(0xFF10B981),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
                                                 }
                                             }
                                         }

@@ -309,37 +309,34 @@ fun InCallScreen(
                 }
             }
 
-            // Top-to-middle spacer to position Profile Picture strictly in the middle (Req 11)
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Attractive Centered Profile Picture Hero with Glow & Pulse Rings (Req 11)
-            Box(contentAlignment = Alignment.Center) {
-                if (isIncomingRinging) {
-                    Box(
-                        modifier = Modifier
-                            .scale(pulseScale)
-                            .size(200.dp)
-                            .clip(CircleShape)
-                            .background(AccentGreen.copy(alpha = 0.22f))
-                    )
-                }
+            // Square Contact Image starting from below recording pill down to controls menu (Req 4)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
                 Surface(
-                    shape = CircleShape,
-                    shadowElevation = 16.dp,
-                    border = androidx.compose.foundation.BorderStroke(3.dp, Color.White.copy(alpha = 0.85f)),
-                    color = Color.Transparent
+                    shape = RoundedCornerShape(20.dp),
+                    shadowElevation = 12.dp,
+                    border = androidx.compose.foundation.BorderStroke(2.dp, Color.White.copy(alpha = 0.25f)),
+                    color = Color(0xFF1E293B),
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(20.dp))
                 ) {
                     ContactAvatar(
                         name = displayName,
                         photoUri = state.photoUri,
-                        size = 170.dp,
-                        fontSize = 58.sp
+                        shape = RoundedCornerShape(20.dp),
+                        size = 280.dp,
+                        fontSize = 72.sp,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
-
-            // Middle-to-bottom spacer to balance profile photo exactly in the center
-            Spacer(modifier = Modifier.weight(1f))
 
             // Action Control Panel (Item 12: Incoming Call Screen UI)
             if (isIncomingRinging) {
@@ -488,7 +485,10 @@ fun InCallScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(18.dp),
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .padding(18.dp)
+                        .padding(bottom = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(
@@ -574,15 +574,17 @@ fun InCallScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .padding(16.dp)
+                        .padding(bottom = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("DTMF Keypad", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         IconButton(onClick = { isKeypadOpen = false }) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                         }

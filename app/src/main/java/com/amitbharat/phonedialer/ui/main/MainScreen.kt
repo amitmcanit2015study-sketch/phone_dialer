@@ -40,7 +40,7 @@ data class ContactDetailSelection(
     val contact: Contact? = null
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun MainScreen(
     contacts: List<Contact>,
@@ -222,35 +222,37 @@ fun MainScreen(
                 )
             },
             bottomBar = {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    // 1. Dialer
-                    NavigationBarItem(
-                        selected = currentTab == MainTab.DIALER,
-                        onClick = { navigateToTab(MainTab.DIALER) },
-                        icon = { Icon(Icons.Default.Call, contentDescription = "Dialer") },
-                        label = { Text("Dialer", fontSize = 12.sp) }
-                    )
-                    // 2. Contacts
-                    NavigationBarItem(
-                        selected = currentTab == MainTab.CONTACTS,
-                        onClick = { navigateToTab(MainTab.CONTACTS) },
-                        icon = { Icon(Icons.Default.People, contentDescription = "Contacts") },
-                        label = { Text("Contacts", fontSize = 12.sp) }
-                    )
-                    // 3. Messages
-                    NavigationBarItem(
-                        selected = currentTab == MainTab.MESSAGES,
-                        onClick = { navigateToTab(MainTab.MESSAGES) },
-                        icon = { Icon(Icons.Default.Message, contentDescription = "Messages") },
-                        label = { Text("Messages", fontSize = 12.sp) }
-                    )
-                    // 4. Favorites
-                    NavigationBarItem(
-                        selected = currentTab == MainTab.FAVORITES,
-                        onClick = { navigateToTab(MainTab.FAVORITES) },
-                        icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
-                        label = { Text("Favorites", fontSize = 12.sp) }
-                    )
+                if (!WindowInsets.isImeVisible) {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                        // 1. Dialer
+                        NavigationBarItem(
+                            selected = currentTab == MainTab.DIALER,
+                            onClick = { navigateToTab(MainTab.DIALER) },
+                            icon = { Icon(Icons.Default.Call, contentDescription = "Dialer") },
+                            label = { Text("Dialer", fontSize = 12.sp) }
+                        )
+                        // 2. Contacts
+                        NavigationBarItem(
+                            selected = currentTab == MainTab.CONTACTS,
+                            onClick = { navigateToTab(MainTab.CONTACTS) },
+                            icon = { Icon(Icons.Default.People, contentDescription = "Contacts") },
+                            label = { Text("Contacts", fontSize = 12.sp) }
+                        )
+                        // 3. Messages
+                        NavigationBarItem(
+                            selected = currentTab == MainTab.MESSAGES,
+                            onClick = { navigateToTab(MainTab.MESSAGES) },
+                            icon = { Icon(Icons.Default.Message, contentDescription = "Messages") },
+                            label = { Text("Messages", fontSize = 12.sp) }
+                        )
+                        // 4. Favorites
+                        NavigationBarItem(
+                            selected = currentTab == MainTab.FAVORITES,
+                            onClick = { navigateToTab(MainTab.FAVORITES) },
+                            icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
+                            label = { Text("Favorites", fontSize = 12.sp) }
+                        )
+                    }
                 }
             }
         ) { innerPadding ->
