@@ -40,6 +40,7 @@ fun ContactsScreen(
     onDeleteContact: (Contact) -> Unit,
     onSyncDeviceContacts: () -> Unit,
     onContactClick: (name: String, number: String, photoUri: String?, contact: Contact) -> Unit,
+    onSearchActive: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -51,6 +52,7 @@ fun ContactsScreen(
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(isSearchOpen) {
+        onSearchActive(isSearchOpen)
         if (isSearchOpen) {
             focusRequester.requestFocus()
         }
@@ -63,6 +65,7 @@ fun ContactsScreen(
             isSearchOpen -> {
                 isSearchOpen = false
                 searchQuery = ""
+                onSearchActive(false)
             }
         }
     }
@@ -176,7 +179,10 @@ fun ContactsScreen(
                 ) {
                     // Floating Search FAB
                     FloatingActionButton(
-                        onClick = { isSearchOpen = true },
+                        onClick = {
+                            isSearchOpen = true
+                            onSearchActive(true)
+                        },
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = MaterialTheme.colorScheme.primary,
                         shape = CircleShape,
@@ -240,6 +246,7 @@ fun ContactsScreen(
                                 searchQuery = ""
                             } else {
                                 isSearchOpen = false
+                                onSearchActive(false)
                             }
                         }) {
                             Icon(
@@ -292,16 +299,10 @@ fun ContactItemRow(
             val primaryNum = contact.numbers.firstOrNull() ?: ""
             val context = LocalContext.current
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        if (contact.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                        contentDescription = "Favorite",
-                        tint = if (contact.isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 // Sequence from the last: Call, Message, WhatsApp (Left-to-right: WhatsApp -> Message -> Call)
                 if (isWa && primaryNum.isNotBlank()) {
                     IconButton(
@@ -310,44 +311,42 @@ fun ContactItemRow(
                         },
                         modifier = Modifier
                             .size(36.dp)
-                            .background(Color(0xFFE8F8EE), CircleShape)
+                            .background(Color(0xFFE8F8EE), RoundedCornerShape(8.dp))
                     ) {
                         Icon(
                             painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
                             contentDescription = "WhatsApp",
                             tint = Color(0xFF25D366),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(19.dp)
                         )
                     }
-                    Spacer(Modifier.width(4.dp))
                 }
 
                 IconButton(
                     onClick = onMessageClick,
                     modifier = Modifier
                         .size(36.dp)
-                        .background(Color(0xFFE0F2FE), CircleShape)
+                        .background(Color(0xFFE0F2FE), RoundedCornerShape(8.dp))
                 ) {
                     Icon(
                         Icons.Default.Message,
                         contentDescription = "Message",
                         tint = Color(0xFF0284C7),
-                        modifier = Modifier.size(19.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
-                Spacer(Modifier.width(4.dp))
 
                 IconButton(
                     onClick = onCallClick,
                     modifier = Modifier
                         .size(36.dp)
-                        .background(Color(0xFFD1FAE5), CircleShape)
+                        .background(Color(0xFFD1FAE5), RoundedCornerShape(8.dp))
                 ) {
                     Icon(
                         Icons.Default.Call,
                         contentDescription = "Call",
                         tint = Color(0xFF10B981),
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

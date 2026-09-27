@@ -120,7 +120,7 @@ fun FavoritesScreen(
                                         },
                                         modifier = Modifier
                                             .size(36.dp)
-                                            .background(Color(0xFFE8F8EE), CircleShape)
+                                            .background(Color(0xFFE8F8EE), RoundedCornerShape(8.dp))
                                     ) {
                                         Icon(
                                             painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
@@ -135,7 +135,7 @@ fun FavoritesScreen(
                                     onClick = { onMessageClick(num) },
                                     modifier = Modifier
                                         .size(36.dp)
-                                        .background(Color(0xFFE0F2FE), CircleShape)
+                                        .background(Color(0xFFE0F2FE), RoundedCornerShape(8.dp))
                                 ) {
                                     Icon(
                                         Icons.Default.Message,
@@ -149,7 +149,7 @@ fun FavoritesScreen(
                                     onClick = { onCallClick(num) },
                                     modifier = Modifier
                                         .size(36.dp)
-                                        .background(Color(0xFFD1FAE5), CircleShape)
+                                        .background(Color(0xFFD1FAE5), RoundedCornerShape(8.dp))
                                 ) {
                                     Icon(Icons.Default.Call, contentDescription = "Call", tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
                                 }

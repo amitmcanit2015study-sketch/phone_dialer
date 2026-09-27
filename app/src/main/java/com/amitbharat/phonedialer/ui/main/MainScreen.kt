@@ -63,16 +63,19 @@ fun MainScreen(
     var selectedContactDetails by remember { mutableStateOf<ContactDetailSelection?>(null) }
     var editingContact by remember { mutableStateOf<Contact?>(null) }
     var activeChatThread by remember { mutableStateOf<com.amitbharat.phonedialer.ui.messages.MessageThread?>(null) }
+    var isSearchActive by remember { mutableStateOf(false) }
     
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
     fun navigateToTab(tab: MainTab) {
+        isSearchActive = false
         currentTab = tab
     }
 
     // Root Level Back Handler: No navigation trail; pressing back from any tab directly returns to DIALER
     BackHandler {
         when {
+            isSearchActive -> isSearchActive = false
             activeChatThread != null -> activeChatThread = null
             editingContact != null -> editingContact = null
             selectedContactDetails != null -> selectedContactDetails = null
@@ -221,8 +224,9 @@ fun MainScreen(
                     )
                 )
             },
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                if (!WindowInsets.isImeVisible) {
+                if (!isSearchActive && !WindowInsets.isImeVisible) {
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         // 1. Dialer
                         NavigationBarItem(
@@ -256,7 +260,14 @@ fun MainScreen(
                 }
             }
         ) { innerPadding ->
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        top = innerPadding.calculateTopPadding(),
+                        bottom = innerPadding.calculateBottomPadding()
+                    )
+            ) {
                 when (currentTab) {
                     MainTab.DIALER -> DialerScreen(
                         allContacts = contacts,
@@ -281,7 +292,8 @@ fun MainScreen(
                         onDeleteCallLog = onDeleteCallLog,
                         onContactClick = { name, number, photoUri ->
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri)
-                        }
+                        },
+                        onSearchActive = { isSearchActive = it }
                     )
                     MainTab.CONTACTS -> ContactsScreen(
                         contacts = contacts,
@@ -306,7 +318,8 @@ fun MainScreen(
                         onSyncDeviceContacts = onSyncDeviceContacts,
                         onContactClick = { name, number, photoUri, contact ->
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri, contact)
-                        }
+                        },
+                        onSearchActive = { isSearchActive = it }
                     )
                     MainTab.MESSAGES -> MessagesScreen(
                         contacts = contacts,

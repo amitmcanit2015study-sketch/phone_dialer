@@ -3,14 +3,12 @@ package com.amitbharat.phonedialer.ui.settings
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.provider.Telephony
 import android.telecom.TelecomManager
 import android.telephony.TelephonyManager
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,14 +21,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amitbharat.phonedialer.ui.theme.AccentGreen
-import com.amitbharat.phonedialer.ui.theme.AccentRed
 import com.amitbharat.phonedialer.utils.PreferencesManager
 import com.amitbharat.phonedialer.utils.ThemeMode
 
@@ -49,28 +45,21 @@ fun SettingsScreen(
     val prefs = remember { PreferencesManager.getInstance(context) }
     var selectedSection by remember { mutableStateOf(SettingsSection.CALL) }
 
-    // Dialog state for Call Settings
+    // Dialog state for essential Call Settings
     var showCallerIdSpamDialog by remember { mutableStateOf(false) }
-    var showAssistedDialingDialog by remember { mutableStateOf(false) }
     var showBlockedNumbersDialog by remember { mutableStateOf(false) }
     var showCallRecordingDialog by remember { mutableStateOf(false) }
     var showDisplayOptionsDialog by remember { mutableStateOf(false) }
-    var showIncomingGestureDialog by remember { mutableStateOf(false) }
     var showSoundsVibrationDialog by remember { mutableStateOf(false) }
-    var showVoicemailDialog by remember { mutableStateOf(false) }
-    var showCallingCardDialog by remember { mutableStateOf(false) }
-    var showCallerIdAnnounceDialog by remember { mutableStateOf(false) }
     var showFlipToSilenceDialog by remember { mutableStateOf(false) }
 
     // State bindings
     var isCallerIdSpamEnabled by remember { mutableStateOf(prefs.isBlockSpamCallsEnabled()) }
-    var isAssistedDialingEnabled by remember { mutableStateOf(prefs.isAssistedDialingEnabled()) }
     var isBlockUnknown by remember { mutableStateOf(prefs.isBlockUnknownCallsEnabled()) }
     var blockedNumbers by remember { mutableStateOf(prefs.getBlockedNumbers().toList()) }
     var newBlockNumberInput by remember { mutableStateOf("") }
     var callRecordingMode by remember { mutableStateOf(prefs.getCallRecordingMode()) }
     var isFlipToSilence by remember { mutableStateOf(prefs.isFlipToSilenceEnabled()) }
-    var isCallerIdAnnounce by remember { mutableStateOf(prefs.isCallerIdAnnouncementEnabled()) }
     var isDialpadSound by remember { mutableStateOf(prefs.isDialpadSoundEnabled()) }
     var isDialpadVibrate by remember { mutableStateOf(prefs.isVibrationEnabled()) }
 
@@ -79,7 +68,6 @@ fun SettingsScreen(
     var smsDeliveryReports by remember { mutableStateOf(prefs.isSmsDeliveryReportsEnabled()) }
     var showIphoneReactions by remember { mutableStateOf(prefs.isShowIphoneReactionsEnabled()) }
     var smsNotifications by remember { mutableStateOf(prefs.isSmsNotificationsEnabled()) }
-    var smsSound by remember { mutableStateOf(prefs.isSmsSoundEnabled()) }
     var smsVibration by remember { mutableStateOf(prefs.isSmsVibrationEnabled()) }
     var autoRetrieveMms by remember { mutableStateOf(prefs.isAutoRetrieveMmsEnabled()) }
     var groupMessaging by remember { mutableStateOf(prefs.isGroupMessagingEnabled()) }
@@ -201,7 +189,7 @@ fun SettingsScreen(
         ) {
             if (selectedSection == SettingsSection.CALL) {
                 // ==========================================
-                // CALL SETTINGS SECTION
+                // ESSENTIAL CALL SETTINGS
                 // ==========================================
 
                 // Default Dialer Card
@@ -231,7 +219,7 @@ fun SettingsScreen(
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 text = if (isDefaultDialer) "Phone Dialer is currently your default application for placing and receiving calls."
-                                else "Set Phone Dialer as your default phone app to receive incoming calls with the full-screen caller ID and dial numbers directly.",
+                                else "Set Phone Dialer as your default phone app to receive incoming calls with full-screen caller ID.",
                                 fontSize = 13.sp,
                                 color = if (isDefaultDialer) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                             )
@@ -245,44 +233,16 @@ fun SettingsScreen(
                     }
                 }
 
-                // Call Assist Category
+                // Call Security & Spam Category
                 item {
-                    SettingsCategoryHeader("Call Assist")
+                    SettingsCategoryHeader("Call Security & Spam")
                     Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                         Column {
                             SettingsItemRow(
                                 title = "Caller ID and spam",
                                 icon = Icons.Default.Security,
-                                subtitle = if (isCallerIdSpamEnabled) "Filter spam is On" else "Off",
+                                subtitle = if (isCallerIdSpamEnabled) "Spam protection is active" else "Spam protection is off",
                                 onClick = { showCallerIdSpamDialog = true }
-                            )
-                        }
-                    }
-                }
-
-                // General Category
-                item {
-                    SettingsCategoryHeader("General")
-                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column {
-                            SettingsItemRow(
-                                title = "Accessibility",
-                                icon = Icons.Default.Accessibility,
-                                subtitle = "Hearing aids and TTY settings",
-                                onClick = {
-                                    try {
-                                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Accessibility settings unavailable", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            SettingsItemRow(
-                                title = "Assisted dialling",
-                                icon = Icons.Default.Public,
-                                subtitle = if (isAssistedDialingEnabled) "Enabled" else "Disabled",
-                                onClick = { showAssistedDialingDialog = true }
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                             SettingsItemRow(
@@ -291,24 +251,15 @@ fun SettingsScreen(
                                 subtitle = "${blockedNumbers.size} blocked numbers",
                                 onClick = { showBlockedNumbersDialog = true }
                             )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            SettingsItemRow(
-                                title = "Calling accounts",
-                                icon = Icons.Default.SimCard,
-                                subtitle = "Manage SIMs and SIP calling accounts",
-                                onClick = {
-                                    try {
-                                        context.startActivity(Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS))
-                                    } catch (e: Exception) {
-                                        try {
-                                            context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                                        } catch (ex: Exception) {
-                                            Toast.makeText(context, "Calling accounts unavailable", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        }
+                    }
+                }
+
+                // Calls & Features Category
+                item {
+                    SettingsCategoryHeader("Calls & Recording")
+                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column {
                             SettingsItemRow(
                                 title = "Call recording",
                                 icon = Icons.Default.Mic,
@@ -321,24 +272,17 @@ fun SettingsScreen(
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                             SettingsItemRow(
-                                title = "Display options",
-                                icon = Icons.Default.Palette,
-                                subtitle = "Sort order, name format and theme",
-                                onClick = { showDisplayOptionsDialog = true }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            SettingsItemRow(
-                                title = "Incoming call gesture",
-                                icon = Icons.Default.TouchApp,
-                                subtitle = "Gestures to answer or silence calls",
-                                onClick = { showIncomingGestureDialog = true }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            SettingsItemRow(
                                 title = "Quick responses",
                                 icon = Icons.Default.Quickreply,
                                 subtitle = "Edit call decline text replies",
                                 onClick = { showQuickRepliesDialog = true }
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            SettingsItemRow(
+                                title = "Flip to silence",
+                                icon = Icons.Default.ScreenRotation,
+                                subtitle = if (isFlipToSilence) "Turned On" else "Off",
+                                onClick = { showFlipToSilenceDialog = true }
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                             SettingsItemRow(
@@ -349,52 +293,27 @@ fun SettingsScreen(
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                             SettingsItemRow(
-                                title = "Voicemail",
-                                icon = Icons.Default.Voicemail,
-                                subtitle = "Service and notification settings",
-                                onClick = { showVoicemailDialog = true }
+                                title = "Display options",
+                                icon = Icons.Default.Palette,
+                                subtitle = "Theme mode and appearance",
+                                onClick = { showDisplayOptionsDialog = true }
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                             SettingsItemRow(
-                                title = "Contact ringtones",
-                                icon = Icons.Default.MusicNote,
-                                subtitle = "Set custom ringtones for callers",
+                                title = "Calling accounts",
+                                icon = Icons.Default.SimCard,
+                                subtitle = "Manage SIMs and calling accounts",
                                 onClick = {
                                     try {
-                                        context.startActivity(Intent(Settings.ACTION_SOUND_SETTINGS))
+                                        context.startActivity(Intent(TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS))
                                     } catch (e: Exception) {
-                                        Toast.makeText(context, "Sound settings unavailable", Toast.LENGTH_SHORT).show()
+                                        try {
+                                            context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                                        } catch (ex: Exception) {
+                                            Toast.makeText(context, "Calling accounts unavailable", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            SettingsItemRow(
-                                title = "Calling card",
-                                icon = Icons.Default.CreditCard,
-                                subtitle = "Configure international dialing rules",
-                                onClick = { showCallingCardDialog = true }
-                            )
-                        }
-                    }
-                }
-
-                // Advanced Category
-                item {
-                    SettingsCategoryHeader("Advanced")
-                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column {
-                            SettingsItemRow(
-                                title = "Caller ID announcement",
-                                icon = Icons.Default.RecordVoiceOver,
-                                subtitle = if (isCallerIdAnnounce) "Always announce" else "Never",
-                                onClick = { showCallerIdAnnounceDialog = true }
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            SettingsItemRow(
-                                title = "Flip to silence",
-                                icon = Icons.Default.ScreenRotation,
-                                subtitle = if (isFlipToSilence) "Turned On" else "Off",
-                                onClick = { showFlipToSilenceDialog = true }
                             )
                         }
                     }
@@ -751,39 +670,7 @@ fun SettingsScreen(
         )
     }
 
-    // 2. Assisted Dialing Dialog
-    if (showAssistedDialingDialog) {
-        AlertDialog(
-            onDismissRequest = { showAssistedDialingDialog = false },
-            title = { Text("Assisted dialling", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Assisted dialling", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("Automatically predict and add country codes when calling from abroad", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = isAssistedDialingEnabled,
-                            onCheckedChange = {
-                                isAssistedDialingEnabled = it
-                                prefs.setAssistedDialingEnabled(it)
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showAssistedDialingDialog = false }) { Text("Done") }
-            }
-        )
-    }
-
-    // 3. Blocked Numbers Dialog
+    // 2. Blocked Numbers Dialog
     if (showBlockedNumbersDialog) {
         AlertDialog(
             onDismissRequest = { showBlockedNumbersDialog = false },
@@ -862,7 +749,7 @@ fun SettingsScreen(
         )
     }
 
-    // 4. Call Recording Dialog
+    // 3. Call Recording Dialog
     if (showCallRecordingDialog) {
         AlertDialog(
             onDismissRequest = { showCallRecordingDialog = false },
@@ -913,7 +800,7 @@ fun SettingsScreen(
         )
     }
 
-    // 5. Display Options Dialog
+    // 4. Display Options Dialog
     if (showDisplayOptionsDialog) {
         AlertDialog(
             onDismissRequest = { showDisplayOptionsDialog = false },
@@ -956,22 +843,25 @@ fun SettingsScreen(
         )
     }
 
-    // 6. Incoming Gesture Dialog
-    if (showIncomingGestureDialog) {
+    // 5. Flip to Silence Dialog
+    if (showFlipToSilenceDialog) {
         AlertDialog(
-            onDismissRequest = { showIncomingGestureDialog = false },
-            title = { Text("Incoming call gesture", fontWeight = FontWeight.Bold) },
+            onDismissRequest = { showFlipToSilenceDialog = false },
+            title = { Text("Flip to silence", fontWeight = FontWeight.Bold) },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "To silence an incoming call, place your phone face down on a flat surface.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(14.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Flip to silence", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("Place phone face down on a flat surface to silence ringing", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        Text("Flip to silence", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Switch(
                             checked = isFlipToSilence,
                             onCheckedChange = {
@@ -983,12 +873,12 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showIncomingGestureDialog = false }) { Text("Done") }
+                TextButton(onClick = { showFlipToSilenceDialog = false }) { Text("Done") }
             }
         )
     }
 
-    // 7. Sounds and Vibration Dialog
+    // 6. Sounds and Vibration Dialog
     if (showSoundsVibrationDialog) {
         AlertDialog(
             onDismissRequest = { showSoundsVibrationDialog = false },
@@ -1047,112 +937,7 @@ fun SettingsScreen(
         )
     }
 
-    // 8. Voicemail Dialog
-    if (showVoicemailDialog) {
-        AlertDialog(
-            onDismissRequest = { showVoicemailDialog = false },
-            title = { Text("Voicemail", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Carrier: $simName", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Spacer(Modifier.height(6.dp))
-                    Text("Voicemail number: Provided by your service provider", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(10.dp))
-                    Text("Notifications: Sound & vibration enabled for new voicemail alerts", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showVoicemailDialog = false }) { Text("OK") }
-            }
-        )
-    }
-
-    // 9. Calling Card Dialog
-    if (showCallingCardDialog) {
-        AlertDialog(
-            onDismissRequest = { showCallingCardDialog = false },
-            title = { Text("Calling card", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Calling card rules allow automatic prefixing for long-distance and international calls.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(10.dp))
-                    Text("No calling cards configured for current SIM.", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showCallingCardDialog = false }) { Text("Done") }
-            }
-        )
-    }
-
-    // 10. Caller ID Announcement Dialog
-    if (showCallerIdAnnounceDialog) {
-        AlertDialog(
-            onDismissRequest = { showCallerIdAnnounceDialog = false },
-            title = { Text("Caller ID announcement", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Announce caller ID", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("The caller's name or number will be read out aloud for incoming calls", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = isCallerIdAnnounce,
-                            onCheckedChange = {
-                                isCallerIdAnnounce = it
-                                prefs.setCallerIdAnnouncementEnabled(it)
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showCallerIdAnnounceDialog = false }) { Text("Done") }
-            }
-        )
-    }
-
-    // 11. Flip to Silence Dialog
-    if (showFlipToSilenceDialog) {
-        AlertDialog(
-            onDismissRequest = { showFlipToSilenceDialog = false },
-            title = { Text("Flip to silence", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        "To silence an incoming call, place your phone face down on a flat surface.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Flip to silence", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Switch(
-                            checked = isFlipToSilence,
-                            onCheckedChange = {
-                                isFlipToSilence = it
-                                prefs.setFlipToSilenceEnabled(it)
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showFlipToSilenceDialog = false }) { Text("Done") }
-            }
-        )
-    }
-
-    // 12. Quick Replies Dialog
+    // 7. Quick Replies Dialog
     if (showQuickRepliesDialog) {
         AlertDialog(
             onDismissRequest = { showQuickRepliesDialog = false },

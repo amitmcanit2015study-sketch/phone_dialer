@@ -81,6 +81,7 @@ fun DialerScreen(
     onMessageClick: (String) -> Unit = {},
     onDeleteCallLog: (Long) -> Unit,
     onContactClick: (name: String, number: String, photoUri: String?) -> Unit,
+    onSearchActive: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -96,6 +97,7 @@ fun DialerScreen(
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isSearchOpen) {
+        onSearchActive(isSearchOpen)
         if (isSearchOpen) {
             focusRequester.requestFocus()
         }
@@ -107,6 +109,7 @@ fun DialerScreen(
             isSearchOpen -> {
                 isSearchOpen = false
                 searchQuery = ""
+                onSearchActive(false)
             }
             enteredNumber.isNotEmpty() -> enteredNumber = ""
         }
@@ -517,29 +520,11 @@ fun DialerScreen(
                                                 }
                                             }
 
-                                            // If call is recorded, show play button
-                                            if (group.hasRecording && group.recordingPath != null) {
-                                                IconButton(
-                                                    onClick = { togglePlayAudio(group.recordingPath) },
-                                                    modifier = Modifier
-                                                        .size(36.dp)
-                                                        .background(Color(0xFFFEF3C7), CircleShape)
-                                                ) {
-                                                    Icon(
-                                                        if (playingAudioPath == group.recordingPath) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
-                                                        contentDescription = "Play Recording",
-                                                        tint = Color(0xFFD97706),
-                                                        modifier = Modifier.size(24.dp)
-                                                    )
-                                                }
-                                                Spacer(Modifier.width(4.dp))
-                                            }
-
                                             // Action buttons sequence from the last: Call, Message, WhatsApp (Left to Right: WhatsApp -> Message -> Call)
                                             val isWhatsApp = com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(number = group.number)
 
                                             Row(
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 if (isWhatsApp) {
@@ -549,13 +534,13 @@ fun DialerScreen(
                                                         },
                                                         modifier = Modifier
                                                             .size(36.dp)
-                                                            .background(Color(0xFFE8F8EE), CircleShape)
+                                                            .background(Color(0xFFE8F8EE), RoundedCornerShape(8.dp))
                                                     ) {
                                                         Icon(
                                                             painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
                                                             contentDescription = "WhatsApp",
                                                             tint = Color(0xFF25D366),
-                                                            modifier = Modifier.size(20.dp)
+                                                            modifier = Modifier.size(19.dp)
                                                         )
                                                     }
                                                 }
@@ -564,13 +549,13 @@ fun DialerScreen(
                                                     onClick = { onMessageClick(group.number) },
                                                     modifier = Modifier
                                                         .size(36.dp)
-                                                        .background(Color(0xFFE0F2FE), CircleShape)
+                                                        .background(Color(0xFFE0F2FE), RoundedCornerShape(8.dp))
                                                 ) {
                                                     Icon(
-                                                        Icons.AutoMirrored.Filled.Message,
+                                                        Icons.Default.Message,
                                                         contentDescription = "Message",
                                                         tint = Color(0xFF0284C7),
-                                                        modifier = Modifier.size(19.dp)
+                                                        modifier = Modifier.size(18.dp)
                                                     )
                                                 }
 
@@ -578,13 +563,13 @@ fun DialerScreen(
                                                     onClick = { onCallClick(group.number, 0) },
                                                     modifier = Modifier
                                                         .size(36.dp)
-                                                        .background(Color(0xFFD1FAE5), CircleShape)
+                                                        .background(Color(0xFFD1FAE5), RoundedCornerShape(8.dp))
                                                 ) {
                                                     Icon(
                                                         Icons.Default.Call,
                                                         contentDescription = "Call",
                                                         tint = Color(0xFF10B981),
-                                                        modifier = Modifier.size(20.dp)
+                                                        modifier = Modifier.size(18.dp)
                                                     )
                                                 }
                                             }
@@ -629,7 +614,10 @@ fun DialerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FloatingActionButton(
-                    onClick = { isSearchOpen = true },
+                    onClick = {
+                        isSearchOpen = true
+                        onSearchActive(true)
+                    },
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = MaterialTheme.colorScheme.primary,
                     shape = CircleShape,
@@ -692,6 +680,7 @@ fun DialerScreen(
                             searchQuery = ""
                         } else {
                             isSearchOpen = false
+                            onSearchActive(false)
                         }
                     }) {
                         Icon(
