@@ -33,12 +33,17 @@ class CallLogRepository(private val context: Context) {
         private var cachedRecordingsMap: Map<String, String>? = null
         @Volatile
         private var lastRecordingsScanTime: Long = 0L
+        @Volatile
+        var currentFetchLimit: Int = 60
+
+        private val _callLogsFlow = kotlinx.coroutines.flow.MutableStateFlow<List<CallLogItem>>(emptyList())
 
         fun getCachedCallLogs(): List<CallLogItem> = cachedCallLogs ?: emptyList()
 
         fun updateCachedCallLogs(logs: List<CallLogItem>) {
             cachedCallLogs = logs
             lastLogFetchTime = System.currentTimeMillis()
+            _callLogsFlow.value = logs
         }
     }
 
@@ -60,30 +65,30 @@ class CallLogRepository(private val context: Context) {
         if (!forceRefresh && cached != null && (now - lastLogFetchTime < 30_000)) {
             emit(cached)
         } else {
-            // Stage 1 (Fast Lazy Loading): Load latest 50 calls in sub-20ms for instant startup
-            val recentLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = 3, maxCount = 50))
-            if (recentLogs.isNotEmpty()) {
-                cachedCallLogs = recentLogs
-                lastLogFetchTime = now
-                emit(recentLogs)
-            }
-
-            // Stage 2: Load complete call history in background and emit
-            val fullLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = null, maxCount = null))
-            cachedCallLogs = fullLogs
-            lastLogFetchTime = System.currentTimeMillis()
-            emit(fullLogs)
+            // Lazy Loading: Only load the most recent calls (default 60) for instant startup.
+            // Do NOT load complete historical call logs on app startup!
+            val recentLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = null, maxCount = currentFetchLimit))
+            cachedCallLogs = recentLogs
+            lastLogFetchTime = now
+            _callLogsFlow.value = recentLogs
+            emit(recentLogs)
         }
 
-        callLogDao.getAllCallLogs().map { list ->
-            val dbModels = list.map { it.toModel() }
-            val current = cachedCallLogs ?: emptyList()
-            deduplicateLogs(current + dbModels)
-        }.collect {
-            cachedCallLogs = it
-            emit(it)
+        _callLogsFlow.collect { updatedList ->
+            if (updatedList.isNotEmpty()) {
+                emit(updatedList)
+            }
         }
     }.flowOn(Dispatchers.IO)
+
+    suspend fun loadMoreCallLogs(batchSize: Int = 60): List<CallLogItem> = withContext(Dispatchers.IO) {
+        currentFetchLimit += batchSize
+        val updated = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = null, maxCount = currentFetchLimit))
+        cachedCallLogs = updated
+        lastLogFetchTime = System.currentTimeMillis()
+        _callLogsFlow.value = updated
+        updated
+    }
 
     suspend fun addCallLog(item: CallLogItem): Long = withContext(Dispatchers.IO) {
         val entity = CallLogEntity(

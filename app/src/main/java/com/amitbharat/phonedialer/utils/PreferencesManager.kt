@@ -60,6 +60,9 @@ class PreferencesManager private constructor(context: Context) {
     fun isAutoFormatNumbersEnabled(): Boolean = prefs.getBoolean("auto_format_numbers", true)
     fun setAutoFormatNumbersEnabled(enabled: Boolean) = prefs.edit().putBoolean("auto_format_numbers", enabled).apply()
 
+    fun isKeepAliveEnabled(): Boolean = prefs.getBoolean("keep_alive_background", true)
+    fun setKeepAliveEnabled(enabled: Boolean) = prefs.edit().putBoolean("keep_alive_background", enabled).apply()
+
     // SMS Message Preferences
     fun isSmsDeliveryReportsEnabled(): Boolean = prefs.getBoolean("sms_delivery_reports", true)
     fun setSmsDeliveryReportsEnabled(enabled: Boolean) = prefs.edit().putBoolean("sms_delivery_reports", enabled).apply()

@@ -54,6 +54,7 @@ fun MainScreen(
     onDeleteCallLog: (Long) -> Unit,
     onSyncDeviceContacts: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
+    onLoadMoreCallLogs: (() -> Unit)? = null,
     initialTab: MainTab = MainTab.DIALER,
     initialChatAddress: String? = null
 ) {
@@ -113,13 +114,8 @@ fun MainScreen(
                 currentTab = MainTab.DIALER
             }
             else -> {
-                val now = System.currentTimeMillis()
-                if (now - lastBackPressTime < 2000) {
-                    (context as? Activity)?.finish()
-                } else {
-                    lastBackPressTime = now
-                    Toast.makeText(context, "Press back again to exit", Toast.LENGTH_SHORT).show()
-                }
+                // Move task to background so app stays alive in RAM for instant 0s re-opening
+                (context as? Activity)?.moveTaskToBack(true)
             }
         }
     }
@@ -321,7 +317,8 @@ fun MainScreen(
                         onContactClick = { name, number, photoUri ->
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri)
                         },
-                        onSearchActive = { isSearchActive = it }
+                        onSearchActive = { isSearchActive = it },
+                        onLoadMoreCallLogs = onLoadMoreCallLogs
                     )
                     MainTab.CONTACTS -> ContactsScreen(
                         contacts = contacts,

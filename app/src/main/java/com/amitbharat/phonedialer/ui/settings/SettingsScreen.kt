@@ -62,6 +62,7 @@ fun SettingsScreen(
     var isFlipToSilence by remember { mutableStateOf(prefs.isFlipToSilenceEnabled()) }
     var isDialpadSound by remember { mutableStateOf(prefs.isDialpadSoundEnabled()) }
     var isDialpadVibrate by remember { mutableStateOf(prefs.isVibrationEnabled()) }
+    var isKeepAlive by remember { mutableStateOf(prefs.isKeepAliveEnabled()) }
 
     // Message Settings State
     var useSimpleChars by remember { mutableStateOf(prefs.isUseSimpleCharactersEnabled()) }
@@ -321,6 +322,51 @@ fun SettingsScreen(
                                             context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
                                         } catch (ex: Exception) {
                                             Toast.makeText(context, "Calling accounts unavailable", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Performance & Background Running Category
+                item {
+                    SettingsCategoryHeader("Performance & Background Running")
+                    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column {
+                            SettingsItemRow(
+                                title = "Always run in background",
+                                icon = Icons.Default.Bolt,
+                                subtitle = if (isKeepAlive) "App stays in memory for instant 0-second launch" else "App may be cleared by OS",
+                                hasSwitch = true,
+                                checked = isKeepAlive,
+                                onCheckedChange = {
+                                    isKeepAlive = it
+                                    prefs.setKeepAliveEnabled(it)
+                                    if (it) {
+                                        com.amitbharat.phonedialer.service.DialerKeepAliveService.startService(context)
+                                    } else {
+                                        com.amitbharat.phonedialer.service.DialerKeepAliveService.stopService(context)
+                                    }
+                                }
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            SettingsItemRow(
+                                title = "Battery optimization",
+                                icon = Icons.Default.BatteryChargingFull,
+                                subtitle = "Disable OS battery restrictions for continuous background running",
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                            data = android.net.Uri.parse("package:${context.packageName}")
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        try {
+                                            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                                        } catch (ex: Exception) {
+                                            Toast.makeText(context, "Battery settings not supported", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }

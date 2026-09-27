@@ -82,6 +82,7 @@ fun DialerScreen(
     onDeleteCallLog: (Long) -> Unit,
     onContactClick: (name: String, number: String, photoUri: String?) -> Unit,
     onSearchActive: (Boolean) -> Unit = {},
+    onLoadMoreCallLogs: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -609,11 +610,46 @@ fun DialerScreen(
                                     }
                                 }
                             }
+
+                        if (onLoadMoreCallLogs != null && callLogs.size >= 40) {
+                            item(key = "btn_load_more_call_logs") {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                        .clickable { onLoadMoreCallLogs() },
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.History,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = "Load Older Calls (${callLogs.size} loaded)",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+    }
 
         val handleKeyPress: (String) -> Unit = { digit ->
             enteredNumber += digit

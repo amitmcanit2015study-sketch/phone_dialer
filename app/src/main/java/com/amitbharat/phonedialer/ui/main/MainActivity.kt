@@ -83,7 +83,19 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
         requestRequiredPermissions()
 
+        if (prefs.isKeepAliveEnabled()) {
+            com.amitbharat.phonedialer.service.DialerKeepAliveService.startService(this)
+        }
+
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                moveTaskToBack(true)
+            }
+        })
+
         lifecycleScope.launch(Dispatchers.IO) {
+            // Lazy load non-critical data after UI is completely rendered
+            kotlinx.coroutines.delay(3000)
             com.amitbharat.phonedialer.utils.WhatsAppHelper.refreshWhatsAppContacts(this@MainActivity)
             com.amitbharat.phonedialer.repository.SmsRepository.getInstance(this@MainActivity)
                 .loadThreads(contactsRepo.getCachedContacts())
@@ -91,7 +103,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var themeMode by remember { mutableStateOf(prefs.getThemeMode()) }
-            var isAppLoading by remember { mutableStateOf(true) }
+            val hasCachedData = remember { contactsRepo.getCachedContacts().isNotEmpty() || callLogRepo.getCachedCallLogs().isNotEmpty() }
+            var isAppLoading by remember { mutableStateOf(!hasCachedData) }
 
             val contacts by contactsRepo.getAllContacts().collectAsState(initial = contactsRepo.getCachedContacts())
             val favorites = remember(contacts) { contacts.filter { it.isFavorite } }
@@ -103,7 +116,6 @@ class MainActivity : ComponentActivity() {
             // Ultra-fast loading: dismiss splash as soon as initial cache or first batch is available
             LaunchedEffect(contacts, callLogs) {
                 if (contacts.isNotEmpty() || callLogs.isNotEmpty()) {
-                    kotlinx.coroutines.delay(200)
                     isAppLoading = false
                 }
             }
@@ -211,7 +223,10 @@ class MainActivity : ComponentActivity() {
                                         .loadThreads(contactsRepo.getCachedContacts(), forceRefresh = true)
                                 }
                             },
-                            onThemeChange = { mode -> themeMode = mode }
+                            onThemeChange = { mode -> themeMode = mode },
+                            onLoadMoreCallLogs = {
+                                lifecycleScope.launch { callLogRepo.loadMoreCallLogs(60) }
+                            }
                         )
                     }
                 }
