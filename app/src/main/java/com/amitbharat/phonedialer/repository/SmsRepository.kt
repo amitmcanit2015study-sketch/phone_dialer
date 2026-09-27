@@ -277,4 +277,29 @@ class SmsRepository(private val context: Context) {
         current.add(0, updatedThread)
         _threads.value = current
     }
+
+    fun notifyNewIncomingMessage(sender: String, body: String, timestamp: Long) {
+        val norm = normalizeNumber(sender)
+        val contactName = resolveContactName(sender, emptyList())
+        val current = _threads.value.toMutableList()
+        val existingIndex = current.indexOfFirst { it.normalizedNumber == norm || it.displayAddress == sender }
+        val unread = if (existingIndex >= 0) current[existingIndex].unreadCount + 1 else 1
+        val threadIds = if (existingIndex >= 0) current[existingIndex].threadIds else emptyList()
+        val updatedThread = MessageThread(
+            normalizedNumber = norm,
+            displayAddress = sender,
+            contactName = contactName ?: if (existingIndex >= 0) current[existingIndex].contactName else null,
+            latestBody = body,
+            latestTimestamp = timestamp,
+            unreadCount = unread,
+            threadIds = threadIds,
+            isOutgoing = false,
+            isDelivered = true
+        )
+        if (existingIndex >= 0) {
+            current.removeAt(existingIndex)
+        }
+        current.add(0, updatedThread)
+        _threads.value = current
+    }
 }

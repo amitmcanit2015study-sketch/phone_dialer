@@ -27,9 +27,17 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        const val EXTRA_OPEN_TAB = "extra_open_tab"
+        const val EXTRA_CHAT_ADDRESS = "extra_chat_address"
+    }
+
     private lateinit var contactsRepo: ContactsRepository
     private lateinit var callLogRepo: CallLogRepository
     private lateinit var prefs: PreferencesManager
+
+    private var targetTabState = mutableStateOf(com.amitbharat.phonedialer.ui.main.MainTab.DIALER)
+    private var targetChatAddressState = mutableStateOf<String?>(null)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -58,6 +66,7 @@ class MainActivity : ComponentActivity() {
         callLogRepo = CallLogRepository(this)
         prefs = PreferencesManager.getInstance(this)
 
+        handleIntent(intent)
         requestRequiredPermissions()
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -73,6 +82,8 @@ class MainActivity : ComponentActivity() {
             val favorites = remember(contacts) { contacts.filter { it.isFavorite } }
             val callLogs by callLogRepo.getAllCallLogs().collectAsState(initial = callLogRepo.getCachedCallLogs())
             val speedDials by callLogRepo.getSpeedDials().collectAsState(initial = emptyList())
+            val targetTab by targetTabState
+            val targetChatAddress by targetChatAddressState
 
             PhoneDialerTheme(themeMode = themeMode) {
                 MainScreen(
@@ -80,6 +91,8 @@ class MainActivity : ComponentActivity() {
                     favorites = favorites,
                     callLogs = callLogs,
                     speedDials = speedDials,
+                    initialTab = targetTab,
+                    initialChatAddress = targetChatAddress,
                     onCallClick = { number, sim ->
                         TelecomHelper.makeCall(this@MainActivity, number, sim)
                     },
@@ -107,6 +120,31 @@ class MainActivity : ComponentActivity() {
                     },
                     onThemeChange = { mode -> themeMode = mode }
                 )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        val tabExtra = intent.getStringExtra(EXTRA_OPEN_TAB)
+        val chatAddressExtra = intent.getStringExtra(EXTRA_CHAT_ADDRESS)
+
+        if (tabExtra == "MESSAGES" || intent.action == Intent.ACTION_SENDTO || intent.action == Intent.ACTION_VIEW || intent.action == Intent.ACTION_SEND) {
+            targetTabState.value = com.amitbharat.phonedialer.ui.main.MainTab.MESSAGES
+            val scheme = intent.data?.scheme
+            if (scheme == "sms" || scheme == "smsto" || scheme == "mms" || scheme == "mmsto") {
+                val ssp = intent.data?.schemeSpecificPart?.substringBefore("?") ?: ""
+                if (ssp.isNotBlank()) {
+                    targetChatAddressState.value = ssp
+                }
+            } else if (!chatAddressExtra.isNullOrBlank()) {
+                targetChatAddressState.value = chatAddressExtra
             }
         }
     }

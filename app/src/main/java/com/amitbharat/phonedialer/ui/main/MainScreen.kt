@@ -53,10 +53,12 @@ fun MainScreen(
     onDeleteContact: (Contact) -> Unit,
     onDeleteCallLog: (Long) -> Unit,
     onSyncDeviceContacts: () -> Unit,
-    onThemeChange: (ThemeMode) -> Unit
+    onThemeChange: (ThemeMode) -> Unit,
+    initialTab: MainTab = MainTab.DIALER,
+    initialChatAddress: String? = null
 ) {
     val context = LocalContext.current
-    var currentTab by remember { mutableStateOf(MainTab.DIALER) }
+    var currentTab by remember { mutableStateOf(initialTab) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showAboutScreen by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
@@ -64,6 +66,32 @@ fun MainScreen(
     var editingContact by remember { mutableStateOf<Contact?>(null) }
     var activeChatThread by remember { mutableStateOf<com.amitbharat.phonedialer.ui.messages.MessageThread?>(null) }
     var isSearchActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialTab) {
+        if (initialTab != MainTab.DIALER) {
+            currentTab = initialTab
+        }
+    }
+
+    LaunchedEffect(initialChatAddress) {
+        if (!initialChatAddress.isNullOrBlank()) {
+            currentTab = MainTab.MESSAGES
+            val digits = initialChatAddress.replace(Regex("[^0-9]"), "")
+            val norm = if (digits.length >= 10) digits.takeLast(10) else digits
+            val cached = com.amitbharat.phonedialer.repository.SmsRepository.getInstance(context).getCachedThreads()
+            val thread = cached.find { it.normalizedNumber == norm || it.displayAddress == initialChatAddress }
+                ?: com.amitbharat.phonedialer.ui.messages.MessageThread(
+                    normalizedNumber = norm,
+                    displayAddress = initialChatAddress,
+                    contactName = contacts.find { c -> c.numbers.any { n -> n.replace(Regex("[^0-9]"), "").takeLast(10) == norm } }?.name,
+                    latestBody = "",
+                    latestTimestamp = System.currentTimeMillis(),
+                    unreadCount = 0,
+                    threadIds = emptyList()
+                )
+            activeChatThread = thread
+        }
+    }
     
     var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
