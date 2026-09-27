@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -187,6 +187,7 @@ fun InCallScreen(
     val context = LocalContext.current
     val isIncomingRinging = state.callState == Call.STATE_RINGING
     var isKeypadOpen by remember { mutableStateOf(false) }
+    var dialedDtmfDigits by remember { mutableStateOf("") }
     var isQuickSmsOpen by remember { mutableStateOf(false) }
     var customSmsText by remember { mutableStateOf("") }
 

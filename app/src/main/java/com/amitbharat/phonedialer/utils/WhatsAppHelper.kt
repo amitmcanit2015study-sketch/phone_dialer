@@ -6,6 +6,9 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.ContactsContract
 import android.widget.Toast
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -15,11 +18,28 @@ object WhatsAppHelper {
     // Set of contact IDs registered in WhatsApp
     private val whatsAppContactIds = ConcurrentHashMap.newKeySet<Long>()
 
-    // Set of normalized 10-digit phone numbers registered in WhatsApp
+    // Set of normalized phone numbers registered in WhatsApp
     private val whatsAppNumbers = ConcurrentHashMap.newKeySet<String>()
+
+    // Compose-observable state to trigger recomposition when contacts are loaded
+    var updateVersion by mutableIntStateOf(0)
+        private set
 
     @Volatile
     private var isInitialized = false
+
+    private fun addNumberVariants(raw: String?, set: MutableSet<String>) {
+        if (raw.isNullOrBlank()) return
+        val digits = raw.replace(Regex("[^0-9]"), "")
+        if (digits.isBlank()) return
+        set.add(digits)
+        if (digits.length >= 10) {
+            set.add(digits.takeLast(10))
+        }
+        if (digits.startsWith("91") && digits.length == 12) {
+            set.add(digits.substring(2))
+        }
+    }
 
     private fun normalize(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
@@ -30,46 +50,89 @@ object WhatsAppHelper {
     suspend fun refreshWhatsAppContacts(context: Context) = withContext(Dispatchers.IO) {
         try {
             val resolver = context.contentResolver
-            val cursor: Cursor? = resolver.query(
-                ContactsContract.RawContacts.CONTENT_URI,
-                arrayOf(
-                    ContactsContract.RawContacts.CONTACT_ID,
-                    ContactsContract.RawContacts.SYNC1,
-                    ContactsContract.RawContacts.ACCOUNT_TYPE
-                ),
-                "${ContactsContract.RawContacts.ACCOUNT_TYPE} IN (?, ?)",
-                arrayOf("com.whatsapp", "com.whatsapp.w4b"),
-                null
-            )
+            val tempIds = HashSet<Long>()
+            val tempNumbers = HashSet<String>()
 
-            cursor?.use {
-                val contactIdIdx = it.getColumnIndex(ContactsContract.RawContacts.CONTACT_ID)
-                val sync1Idx = it.getColumnIndex(ContactsContract.RawContacts.SYNC1)
+            // 1. Query RawContacts for com.whatsapp and com.whatsapp.w4b
+            try {
+                val cursor: Cursor? = resolver.query(
+                    ContactsContract.RawContacts.CONTENT_URI,
+                    arrayOf(
+                        ContactsContract.RawContacts.CONTACT_ID,
+                        ContactsContract.RawContacts.SYNC1,
+                        ContactsContract.RawContacts.ACCOUNT_TYPE
+                    ),
+                    "${ContactsContract.RawContacts.ACCOUNT_TYPE} IN (?, ?)",
+                    arrayOf("com.whatsapp", "com.whatsapp.w4b"),
+                    null
+                )
+                cursor?.use {
+                    val contactIdIdx = it.getColumnIndex(ContactsContract.RawContacts.CONTACT_ID)
+                    val sync1Idx = it.getColumnIndex(ContactsContract.RawContacts.SYNC1)
 
-                val tempIds = HashSet<Long>()
-                val tempNumbers = HashSet<String>()
-
-                while (it.moveToNext()) {
-                    if (contactIdIdx >= 0) {
-                        val cid = it.getLong(contactIdIdx)
-                        if (cid > 0) tempIds.add(cid)
-                    }
-                    if (sync1Idx >= 0) {
-                        val sync1 = it.getString(sync1Idx) ?: ""
-                        val numPart = sync1.substringBefore("@")
-                        val norm = normalize(numPart)
-                        if (norm.isNotBlank()) {
-                            tempNumbers.add(norm)
+                    while (it.moveToNext()) {
+                        if (contactIdIdx >= 0) {
+                            val cid = it.getLong(contactIdIdx)
+                            if (cid > 0) tempIds.add(cid)
+                        }
+                        if (sync1Idx >= 0) {
+                            val sync1 = it.getString(sync1Idx) ?: ""
+                            val numPart = sync1.substringBefore("@")
+                            addNumberVariants(numPart, tempNumbers)
                         }
                     }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
 
-                whatsAppContactIds.clear()
-                whatsAppContactIds.addAll(tempIds)
+            // 2. Query ContactsContract.Data for WhatsApp profile mimetype
+            try {
+                val dataCursor: Cursor? = resolver.query(
+                    ContactsContract.Data.CONTENT_URI,
+                    arrayOf(
+                        ContactsContract.Data.CONTACT_ID,
+                        ContactsContract.Data.DATA1,
+                        ContactsContract.Data.DATA3
+                    ),
+                    "${ContactsContract.Data.MIMETYPE} = ?",
+                    arrayOf("vnd.android.cursor.item/vnd.com.whatsapp.profile"),
+                    null
+                )
+                dataCursor?.use {
+                    val contactIdIdx = it.getColumnIndex(ContactsContract.Data.CONTACT_ID)
+                    val data1Idx = it.getColumnIndex(ContactsContract.Data.DATA1)
+                    val data3Idx = it.getColumnIndex(ContactsContract.Data.DATA3)
 
-                whatsAppNumbers.clear()
-                whatsAppNumbers.addAll(tempNumbers)
-                isInitialized = true
+                    while (it.moveToNext()) {
+                        if (contactIdIdx >= 0) {
+                            val cid = it.getLong(contactIdIdx)
+                            if (cid > 0) tempIds.add(cid)
+                        }
+                        if (data1Idx >= 0) {
+                            val data1 = it.getString(data1Idx) ?: ""
+                            val numPart = data1.substringBefore("@")
+                            addNumberVariants(numPart, tempNumbers)
+                        }
+                        if (data3Idx >= 0) {
+                            val data3 = it.getString(data3Idx) ?: ""
+                            addNumberVariants(data3, tempNumbers)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            whatsAppContactIds.clear()
+            whatsAppContactIds.addAll(tempIds)
+
+            whatsAppNumbers.clear()
+            whatsAppNumbers.addAll(tempNumbers)
+            isInitialized = true
+
+            withContext(Dispatchers.Main) {
+                updateVersion++
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -77,26 +140,38 @@ object WhatsAppHelper {
     }
 
     fun isWhatsAppLinked(contactId: Long? = null, number: String? = null): Boolean {
+        // Read observable property so caller Composable recomposes when loaded
+        @Suppress("UNUSED_VARIABLE")
+        val v = updateVersion
+
         if (contactId != null && contactId > 0 && whatsAppContactIds.contains(contactId)) {
             return true
         }
         if (!number.isNullOrBlank()) {
-            val norm = normalize(number)
-            if (norm.isNotBlank() && whatsAppNumbers.contains(norm)) {
-                return true
+            val digits = number.replace(Regex("[^0-9]"), "")
+            if (digits.isNotBlank()) {
+                if (whatsAppNumbers.contains(digits)) return true
+                if (digits.length >= 10 && whatsAppNumbers.contains(digits.takeLast(10))) return true
+                if (digits.startsWith("91") && digits.length == 12 && whatsAppNumbers.contains(digits.substring(2))) return true
             }
         }
         return false
     }
 
     fun isWhatsAppLinked(contactId: Long?, numbers: List<String>): Boolean {
+        // Read observable property so caller Composable recomposes when loaded
+        @Suppress("UNUSED_VARIABLE")
+        val v = updateVersion
+
         if (contactId != null && contactId > 0 && whatsAppContactIds.contains(contactId)) {
             return true
         }
         for (num in numbers) {
-            val norm = normalize(num)
-            if (norm.isNotBlank() && whatsAppNumbers.contains(norm)) {
-                return true
+            val digits = num.replace(Regex("[^0-9]"), "")
+            if (digits.isNotBlank()) {
+                if (whatsAppNumbers.contains(digits)) return true
+                if (digits.length >= 10 && whatsAppNumbers.contains(digits.takeLast(10))) return true
+                if (digits.startsWith("91") && digits.length == 12 && whatsAppNumbers.contains(digits.substring(2))) return true
             }
         }
         return false

@@ -2,6 +2,7 @@ package com.amitbharat.phonedialer.ui.contacts
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +22,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -92,7 +94,6 @@ fun ContactsScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 2.dp)
-            ) {
             ) {
 
                 // Header Row (When search is inactive)
@@ -287,10 +288,9 @@ fun ContactItemRow(
                 Text(text = contact.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(text = contact.numbers.firstOrNull() ?: "No number", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            val isWa = remember(contact) {
-                com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(contact.id, contact.numbers)
-            }
+            val isWa = com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(contact.id, contact.numbers)
             val primaryNum = contact.numbers.firstOrNull() ?: ""
+            val context = LocalContext.current
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onToggleFavorite, modifier = Modifier.size(36.dp)) {

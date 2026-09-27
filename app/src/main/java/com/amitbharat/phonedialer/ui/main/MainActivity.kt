@@ -35,7 +35,10 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions[Manifest.permission.READ_CONTACTS] == true) {
-            lifecycleScope.launch { contactsRepo.syncDeviceContacts() }
+            lifecycleScope.launch {
+                contactsRepo.syncDeviceContacts()
+                com.amitbharat.phonedialer.utils.WhatsAppHelper.refreshWhatsAppContacts(this@MainActivity)
+            }
         }
         if (permissions[Manifest.permission.READ_CALL_LOG] == true) {
             lifecycleScope.launch { callLogRepo.syncDeviceCallLogs() }
@@ -58,6 +61,7 @@ class MainActivity : ComponentActivity() {
         requestRequiredPermissions()
 
         lifecycleScope.launch(Dispatchers.IO) {
+            com.amitbharat.phonedialer.utils.WhatsAppHelper.refreshWhatsAppContacts(this@MainActivity)
             com.amitbharat.phonedialer.repository.SmsRepository.getInstance(this@MainActivity)
                 .loadThreads(contactsRepo.getCachedContacts())
         }

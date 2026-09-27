@@ -106,9 +106,7 @@ fun FavoritesScreen(
                                 )
                             }
                             // Sequence from the last: Call, Message, WhatsApp (Left-to-right: WhatsApp -> Message -> Call)
-                            val isWa = remember(contact) {
-                                com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(contact.id, contact.numbers)
-                            }
+                            val isWa = com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(contact.id, contact.numbers)
                             val num = contact.numbers.firstOrNull() ?: ""
 
                             Row(

@@ -506,9 +506,7 @@ fun DialerScreen(
                                             }
 
                                             // Action buttons sequence from the last: Call, Message, WhatsApp (Left to Right: WhatsApp -> Message -> Call)
-                                            val isWhatsApp = remember(group.number) {
-                                                com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(number = group.number)
-                                            }
+                                            val isWhatsApp = com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(number = group.number)
 
                                             Row(
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),

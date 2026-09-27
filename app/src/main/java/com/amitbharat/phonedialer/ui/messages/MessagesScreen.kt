@@ -165,7 +165,6 @@ fun MessagesScreen(
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 2.dp)
             ) {
-            ) {
 
                 // Standard Header (When search is inactive)
                 if (!isSearchOpen) {
