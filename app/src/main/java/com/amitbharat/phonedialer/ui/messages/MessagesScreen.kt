@@ -68,12 +68,13 @@ data class SmsMessageItem(
     val isDelivered: Boolean = false
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MessagesScreen(
     contacts: List<Contact>,
     onCallClick: (String) -> Unit,
     onOpenThread: ((MessageThread) -> Unit)? = null,
+    onSearchActive: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -84,9 +85,29 @@ fun MessagesScreen(
     var showNewComposer by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
+    var hasImeOpened by remember { mutableStateOf(false) }
+    val isImeVisible = WindowInsets.isImeVisible
+
     LaunchedEffect(isSearchOpen) {
+        onSearchActive(isSearchOpen)
         if (isSearchOpen) {
+            hasImeOpened = false
             focusRequester.requestFocus()
+        } else {
+            hasImeOpened = false
+        }
+    }
+
+    LaunchedEffect(isImeVisible, isSearchOpen) {
+        if (isSearchOpen) {
+            if (isImeVisible) {
+                hasImeOpened = true
+            } else if (hasImeOpened) {
+                // When keyboard is hidden, automatically close search box (Req)
+                isSearchOpen = false
+                searchQuery = ""
+                onSearchActive(false)
+            }
         }
     }
 
@@ -97,6 +118,7 @@ fun MessagesScreen(
             isSearchOpen -> {
                 isSearchOpen = false
                 searchQuery = ""
+                onSearchActive(false)
             }
         }
     }
@@ -344,54 +366,100 @@ fun MessagesScreen(
                 }
             }
 
-            // Bottom-Anchored Search Bar directly above keyboard when isSearchOpen is true (Req 2)
+            // Bottom-Anchored Search Bar directly above keyboard when isSearchOpen is true (Zero gap with keyboard)
             if (isSearchOpen) {
                 Surface(
                     shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                     color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 12.dp,
+                    shadowElevation = 16.dp,
+                    tonalElevation = 4.dp,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .imePadding()
+                        .navigationBarsPadding()
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search messages…", fontSize = 14.sp) },
-                            singleLine = true,
-                            modifier = Modifier
-                                .weight(1f)
-                                .focusRequester(focusRequester),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent
-                            )
-                        )
-                        IconButton(onClick = {
-                            if (searchQuery.isNotEmpty()) {
-                                searchQuery = ""
-                            } else {
-                                isSearchOpen = false
+                        Surface(
+                            shape = RoundedCornerShape(24.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(
+                                        fontSize = 15.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    ),
+                                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Text,
+                                        imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                                    ),
+                                    decorationBox = { innerTextField ->
+                                        if (searchQuery.isEmpty()) {
+                                            Text(
+                                                text = "Search messages…",
+                                                fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                            )
+                                        }
+                                        innerTextField()
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(focusRequester)
+                                        .padding(vertical = 4.dp)
+                                )
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { searchQuery = "" },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Clear",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
                             }
-                        }) {
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(
+                            onClick = {
+                                isSearchOpen = false
+                                searchQuery = ""
+                                onSearchActive(false)
+                            },
+                            modifier = Modifier
+                                .size(38.dp)
+                                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Close Search",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }

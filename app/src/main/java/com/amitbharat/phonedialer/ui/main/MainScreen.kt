@@ -324,7 +324,8 @@ fun MainScreen(
                     MainTab.MESSAGES -> MessagesScreen(
                         contacts = contacts,
                         onCallClick = { num -> onCallClick(num, 0) },
-                        onOpenThread = { thread -> activeChatThread = thread }
+                        onOpenThread = { thread -> activeChatThread = thread },
+                        onSearchActive = { isSearchActive = it }
                     )
                     MainTab.FAVORITES -> FavoritesScreen(
                         favorites = favorites,

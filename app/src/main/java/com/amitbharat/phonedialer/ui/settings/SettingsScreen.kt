@@ -241,8 +241,13 @@ fun SettingsScreen(
                             SettingsItemRow(
                                 title = "Caller ID and spam",
                                 icon = Icons.Default.Security,
-                                subtitle = if (isCallerIdSpamEnabled) "Spam protection is active" else "Spam protection is off",
-                                onClick = { showCallerIdSpamDialog = true }
+                                subtitle = if (isCallerIdSpamEnabled) "Filter suspected spam is On" else "Filter spam is Off",
+                                hasSwitch = true,
+                                checked = isCallerIdSpamEnabled,
+                                onCheckedChange = {
+                                    isCallerIdSpamEnabled = it
+                                    prefs.setBlockSpamCallsEnabled(it)
+                                }
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                             SettingsItemRow(
@@ -281,14 +286,19 @@ fun SettingsScreen(
                             SettingsItemRow(
                                 title = "Flip to silence",
                                 icon = Icons.Default.ScreenRotation,
-                                subtitle = if (isFlipToSilence) "Turned On" else "Off",
-                                onClick = { showFlipToSilenceDialog = true }
+                                subtitle = "Silence ringing by flipping phone face down",
+                                hasSwitch = true,
+                                checked = isFlipToSilence,
+                                onCheckedChange = {
+                                    isFlipToSilence = it
+                                    prefs.setFlipToSilenceEnabled(it)
+                                }
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                             SettingsItemRow(
                                 title = "Sounds and vibration",
                                 icon = Icons.AutoMirrored.Filled.VolumeUp,
-                                subtitle = "Dialpad tones and vibration feedback",
+                                subtitle = "Dialpad touch tones and vibration feedback",
                                 onClick = { showSoundsVibrationDialog = true }
                             )
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -1014,12 +1024,21 @@ fun SettingsItemRow(
     title: String,
     icon: ImageVector? = null,
     subtitle: String? = null,
+    hasSwitch: Boolean = false,
+    checked: Boolean = false,
+    onCheckedChange: ((Boolean) -> Unit)? = null,
     onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable {
+                if (hasSwitch && onCheckedChange != null) {
+                    onCheckedChange(!checked)
+                } else {
+                    onClick()
+                }
+            }
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1048,11 +1067,18 @@ fun SettingsItemRow(
                 )
             }
         }
-        Icon(
-            imageVector = Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(20.dp)
-        )
+        if (hasSwitch && onCheckedChange != null) {
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
