@@ -93,6 +93,25 @@ class SmsRepository(private val context: Context) {
         return null
     }
 
+    // In-memory cache for instantly showing recently sent messages across screens
+    private val recentSentMessages = ConcurrentHashMap<String, MutableList<SmsMessageItem>>()
+
+    fun addSentMessage(item: SmsMessageItem) {
+        val norm = normalizeNumber(item.address)
+        val key = if (norm.isNotBlank()) norm else item.address.trim()
+        val list = recentSentMessages.getOrPut(key) { mutableListOf() }
+        synchronized(list) {
+            list.add(item)
+        }
+    }
+
+    fun getRecentSentMessages(address: String): List<SmsMessageItem> {
+        val norm = normalizeNumber(address)
+        val key = if (norm.isNotBlank()) norm else address.trim()
+        val list = recentSentMessages[key] ?: return emptyList()
+        return synchronized(list) { list.toList() }
+    }
+
     suspend fun loadThreads(contacts: List<Contact>, forceRefresh: Boolean = false) = withContext(Dispatchers.IO) {
         val contactLookupMap = HashMap<String, String>()
         for (c in contacts) {
@@ -119,15 +138,7 @@ class SmsRepository(private val context: Context) {
             return@withContext
         }
 
-        val threadMap = LinkedHashMap<String, MutableList<SmsMessageItem>>()
-        try {
-            val cursor: Cursor? = context.contentResolver.query(
-                Telephony.Sms.CONTENT_URI,
-                arrayOf("_id", "address", "body", "date", "type", "read", "status"),
-                null,
-                null,
-                "date DESC"
-            )
+        fun parseCursor(cursor: Cursor?, targetMap: LinkedHashMap<String, MutableList<SmsMessageItem>>) {
             cursor?.use {
                 val idIdx = it.getColumnIndex("_id")
                 val addrIdx = it.getColumnIndex("address")
@@ -149,9 +160,9 @@ class SmsRepository(private val context: Context) {
                         val status = if (statusIdx >= 0) it.getInt(statusIdx) else -1
 
                         val isOut = type == Telephony.Sms.MESSAGE_TYPE_SENT || type == Telephony.Sms.MESSAGE_TYPE_OUTBOX
-                        val isDelivered = status == 0 // STATUS_COMPLETE
+                        val isDelivered = status == 0
 
-                        threadMap.getOrPut(key) { mutableListOf() }.add(
+                        targetMap.getOrPut(key) { mutableListOf() }.add(
                             SmsMessageItem(
                                 id = id,
                                 address = addr,
@@ -166,30 +177,60 @@ class SmsRepository(private val context: Context) {
                     }
                 }
             }
+        }
+
+        fun buildThreadList(map: LinkedHashMap<String, MutableList<SmsMessageItem>>): List<MessageThread> {
+            return map.map { (key, items) ->
+                val latest = items.first()
+                val resolvedName = contactLookupMap[key] ?: resolveContactName(latest.address, contacts, contactLookupMap)
+                val unreadCount = items.count { !it.isRead && !it.isOutgoing }
+
+                MessageThread(
+                    normalizedNumber = key,
+                    displayAddress = latest.address,
+                    contactName = resolvedName,
+                    latestBody = latest.body,
+                    latestTimestamp = latest.timestamp,
+                    unreadCount = unreadCount,
+                    threadIds = emptyList(),
+                    isOutgoing = latest.isOutgoing,
+                    isDelivered = latest.isDelivered
+                )
+            }.sortedByDescending { it.latestTimestamp }
+        }
+
+        try {
+            // Stage 1: Fast lazy load messages from past 3 days first
+            val threeDaysAgo = System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1000L
+            val fastMap = LinkedHashMap<String, MutableList<SmsMessageItem>>()
+            val fastCursor: Cursor? = context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf("_id", "address", "body", "date", "type", "read", "status"),
+                "${Telephony.Sms.DATE} >= ?",
+                arrayOf(threeDaysAgo.toString()),
+                "date DESC"
+            )
+            parseCursor(fastCursor, fastMap)
+            val fastList = buildThreadList(fastMap)
+            if (fastList.isNotEmpty()) {
+                _threads.value = fastList
+            }
+
+            // Stage 2: Load full threads in background
+            val fullMap = LinkedHashMap<String, MutableList<SmsMessageItem>>()
+            val fullCursor: Cursor? = context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf("_id", "address", "body", "date", "type", "read", "status"),
+                null,
+                null,
+                "date DESC"
+            )
+            parseCursor(fullCursor, fullMap)
+            _threads.value = buildThreadList(fullMap)
+            isLoaded = true
         } catch (e: Exception) {
             e.printStackTrace()
         }
-
-        val list = threadMap.map { (key, items) ->
-            val latest = items.first()
-            val resolvedName = contactLookupMap[key] ?: resolveContactName(latest.address, contacts, contactLookupMap)
-            val unreadCount = items.count { !it.isRead && !it.isOutgoing }
-
-            MessageThread(
-                normalizedNumber = key,
-                displayAddress = latest.address,
-                contactName = resolvedName,
-                latestBody = latest.body,
-                latestTimestamp = latest.timestamp,
-                unreadCount = unreadCount,
-                threadIds = emptyList(),
-                isOutgoing = latest.isOutgoing,
-                isDelivered = latest.isDelivered
-            )
-        }.sortedByDescending { it.latestTimestamp }
-
-        _threads.value = list
-        isLoaded = true
     }
 
     suspend fun markThreadAsRead(displayAddress: String) = withContext(Dispatchers.IO) {

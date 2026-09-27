@@ -29,6 +29,7 @@ import com.amitbharat.phonedialer.utils.ContactAvatar
 fun FavoritesScreen(
     favorites: List<Contact>,
     onCallClick: (String) -> Unit,
+    onMessageClick: (String) -> Unit = {},
     onContactClick: (name: String, number: String, photoUri: String?, contact: Contact) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -104,21 +105,55 @@ fun FavoritesScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Sequence from the last: Call, Message, WhatsApp (Left-to-right: WhatsApp -> Message -> Call)
+                            val isWa = remember(contact) {
+                                com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(contact.id, contact.numbers)
+                            }
+                            val num = contact.numbers.firstOrNull() ?: ""
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isWa && num.isNotBlank()) {
+                                    IconButton(
+                                        onClick = {
+                                            com.amitbharat.phonedialer.utils.WhatsAppHelper.openWhatsAppChat(context, num)
+                                        },
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .background(Color(0xFF25D366).copy(alpha = 0.16f), CircleShape)
+                                    ) {
+                                        Icon(
+                                            painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
+                                            contentDescription = "WhatsApp",
+                                            tint = Color(0xFF25D366),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+
                                 IconButton(
-                                    onClick = { onCallClick(contact.numbers.firstOrNull() ?: "") },
-                                    modifier = Modifier.size(38.dp).background(AccentGreen.copy(alpha = 0.15f), CircleShape)
+                                    onClick = { onMessageClick(num) },
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Message,
+                                        contentDescription = "Message",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { onCallClick(num) },
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .background(AccentGreen.copy(alpha = 0.18f), CircleShape)
                                 ) {
                                     Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
-                                }
-                                IconButton(
-                                    onClick = {
-                                        val num = contact.numbers.firstOrNull() ?: ""
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("sms:$num")))
-                                    },
-                                    modifier = Modifier.size(38.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
-                                ) {
-                                    Icon(Icons.Default.Message, contentDescription = "SMS", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                 }
                             }
                         }

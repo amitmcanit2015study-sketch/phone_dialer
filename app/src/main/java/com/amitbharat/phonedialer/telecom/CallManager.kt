@@ -36,6 +36,7 @@ object CallManager {
     private val _callState = MutableStateFlow(ActiveCallState())
     val callState: StateFlow<ActiveCallState> = _callState.asStateFlow()
 
+    private var appContext: Context? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var durationTimer: Runnable? = null
     private var currentDuration = 0L
@@ -53,10 +54,11 @@ object CallManager {
     }
 
     fun setCall(call: Call, context: Context? = null) {
+        if (context != null) appContext = context.applicationContext
         currentCall?.unregisterCallback(callCallback)
         currentCall = call
         call.registerCallback(callCallback)
-        updateStateFromCall(call, context)
+        updateStateFromCall(call, appContext)
     }
 
     fun clearCall() {
@@ -107,19 +109,43 @@ object CallManager {
         _callState.value = _callState.value.copy(isRecording = isRecording)
     }
 
-    private fun updateStateFromCall(call: Call, context: Context? = null) {
+    private fun updateStateFromCall(call: Call, ctx: Context? = null) {
         val handle = call.details.handle
         val number = handle?.schemeSpecificPart ?: ""
         var callerName = call.details.callerDisplayName
-        var photoUri: String? = null
+        var photoUri: String? = _callState.value.photoUri
 
-        // Lookup contact details if context is available
-        if (context != null && number.isNotBlank()) {
+        // 1. Check in-memory cached contacts from ContactsRepository for instant match
+        if (number.isNotBlank()) {
+            val cleanIncoming = number.replace(Regex("[^0-9]"), "")
+            val cachedContact = com.amitbharat.phonedialer.repository.ContactsRepository.getCachedContacts().find { c ->
+                c.numbers.any { n ->
+                    val cleanC = n.replace(Regex("[^0-9]"), "")
+                    cleanC == cleanIncoming || (cleanC.length >= 10 && cleanIncoming.length >= 10 && cleanC.takeLast(10) == cleanIncoming.takeLast(10))
+                }
+            }
+            if (cachedContact != null) {
+                if (callerName.isNullOrBlank() || callerName == number) {
+                    callerName = cachedContact.name
+                }
+                if (photoUri.isNullOrBlank()) {
+                    photoUri = cachedContact.photoUri
+                }
+            }
+        }
+
+        // 2. Lookup contact details from PhoneLookup if still missing
+        val context = ctx ?: appContext
+        if (context != null && number.isNotBlank() && (callerName.isNullOrBlank() || photoUri.isNullOrBlank())) {
             try {
                 val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
                 val cursor: Cursor? = context.contentResolver.query(
                     uri,
-                    arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME, ContactsContract.PhoneLookup.PHOTO_URI),
+                    arrayOf(
+                        ContactsContract.PhoneLookup.DISPLAY_NAME,
+                        ContactsContract.PhoneLookup.PHOTO_URI,
+                        ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI
+                    ),
                     null,
                     null,
                     null
@@ -128,12 +154,16 @@ object CallManager {
                     if (it.moveToFirst()) {
                         val nameIdx = it.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
                         val photoIdx = it.getColumnIndex(ContactsContract.PhoneLookup.PHOTO_URI)
+                        val thumbIdx = it.getColumnIndex(ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI)
                         if (nameIdx >= 0) {
                             val name = it.getString(nameIdx)
-                            if (!name.isNullOrBlank()) callerName = name
+                            if (!name.isNullOrBlank() && callerName.isNullOrBlank()) callerName = name
                         }
-                        if (photoIdx >= 0) {
+                        if (photoIdx >= 0 && photoUri.isNullOrBlank()) {
                             photoUri = it.getString(photoIdx)
+                        }
+                        if (thumbIdx >= 0 && photoUri.isNullOrBlank()) {
+                            photoUri = it.getString(thumbIdx)
                         }
                     }
                 }
@@ -152,7 +182,7 @@ object CallManager {
             hasCall = true,
             callState = call.state,
             number = number,
-            callerName = if (!callerName.isNullOrEmpty()) callerName else null,
+            callerName = if (!callerName.isNullOrEmpty()) callerName else _callState.value.callerName,
             photoUri = photoUri,
             isIncoming = isIncoming,
             isHeld = call.state == Call.STATE_HOLDING

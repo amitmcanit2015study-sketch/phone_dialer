@@ -58,10 +58,24 @@ class ContactsRepository(private val context: Context) {
         if (!forceRefresh && cached != null && (now - lastFetchTime < 60_000)) {
             emit(cached)
         } else {
-            val deviceContacts = deduplicateContacts(fetchDeviceContactsDirectly())
+            // Stage 1: If no cache, quickly load starred/favorites first so header and favorites appear instantly
+            if (cached == null || cached.isEmpty()) {
+                val starred = deduplicateContacts(fetchDeviceContactsDirectly(onlyStarred = true))
+                if (starred.isNotEmpty()) {
+                    emit(starred)
+                }
+            }
+
+            // Stage 2: Fetch full contacts and emit
+            val deviceContacts = deduplicateContacts(fetchDeviceContactsDirectly(onlyStarred = false))
             cachedContacts = deviceContacts
             lastFetchTime = now
             emit(deviceContacts)
+
+            // Asynchronously refresh WhatsApp contacts map in background
+            try {
+                com.amitbharat.phonedialer.utils.WhatsAppHelper.refreshWhatsAppContacts(context)
+            } catch (e: Exception) {}
         }
 
         contactDao.getAllContacts().map { list ->
@@ -74,8 +88,7 @@ class ContactsRepository(private val context: Context) {
     }.flowOn(Dispatchers.IO)
 
     fun getFavoriteContacts(): Flow<List<Contact>> = flow {
-        val deviceContacts = deduplicateContacts(fetchDeviceContactsDirectly())
-        val favorites = deviceContacts.filter { it.isFavorite }
+        val favorites = deduplicateContacts(fetchDeviceContactsDirectly(onlyStarred = true))
         emit(favorites)
 
         contactDao.getFavoriteContacts().map { list ->
@@ -124,10 +137,11 @@ class ContactsRepository(private val context: Context) {
         contactDao.deleteContact(entity)
     }
 
-    fun fetchDeviceContactsDirectly(): List<Contact> {
+    fun fetchDeviceContactsDirectly(onlyStarred: Boolean = false): List<Contact> {
         val result = mutableListOf<Contact>()
         try {
             val resolver = context.contentResolver
+            val selection = if (onlyStarred) "${ContactsContract.CommonDataKinds.Phone.STARRED} = 1" else null
             val cursor = resolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 arrayOf(
@@ -137,7 +151,7 @@ class ContactsRepository(private val context: Context) {
                     ContactsContract.CommonDataKinds.Phone.PHOTO_URI,
                     ContactsContract.CommonDataKinds.Phone.STARRED
                 ),
-                null,
+                selection,
                 null,
                 ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC"
             )

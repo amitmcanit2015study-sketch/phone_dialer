@@ -93,62 +93,7 @@ fun ContactsScreen(
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 2.dp)
             ) {
-                // Top-Anchored Search Bar when isSearchOpen is true
-                AnimatedVisibility(
-                    visible = isSearchOpen,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(2.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            OutlinedTextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
-                                placeholder = { Text("Search contacts…", fontSize = 14.sp) },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .focusRequester(focusRequester),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedBorderColor = Color.Transparent
-                                )
-                            )
-                            IconButton(onClick = {
-                                if (searchQuery.isNotEmpty()) {
-                                    searchQuery = ""
-                                } else {
-                                    isSearchOpen = false
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close Search",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
+            ) {
 
                 // Header Row (When search is inactive)
                 if (!isSearchOpen) {
@@ -251,6 +196,60 @@ fun ContactsScreen(
                     }
                 }
             }
+
+            // Bottom-Anchored Search Bar directly above the keyboard when isSearchOpen is true (Req 2)
+            if (isSearchOpen) {
+                Surface(
+                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 12.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .imePadding()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search contacts…", fontSize = 14.sp) },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(focusRequester),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent
+                            )
+                        )
+                        IconButton(onClick = {
+                            if (searchQuery.isNotEmpty()) {
+                                searchQuery = ""
+                            } else {
+                                isSearchOpen = false
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -288,18 +287,59 @@ fun ContactItemRow(
                 Text(text = contact.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(text = contact.numbers.firstOrNull() ?: "No number", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onToggleFavorite) {
-                Icon(
-                    if (contact.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                    contentDescription = "Favorite",
-                    tint = if (contact.isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            val isWa = remember(contact) {
+                com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(contact.id, contact.numbers)
             }
-            IconButton(onClick = onCallClick) {
-                Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen)
-            }
-            IconButton(onClick = onMessageClick) {
-                Icon(Icons.Default.Message, contentDescription = "Message", tint = MaterialTheme.colorScheme.primary)
+            val primaryNum = contact.numbers.firstOrNull() ?: ""
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        if (contact.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = "Favorite",
+                        tint = if (contact.isFavorite) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Sequence from the last: Call, Message, WhatsApp (Left-to-right: WhatsApp -> Message -> Call)
+                if (isWa && primaryNum.isNotBlank()) {
+                    IconButton(
+                        onClick = {
+                            com.amitbharat.phonedialer.utils.WhatsAppHelper.openWhatsAppChat(context, primaryNum)
+                        },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color(0xFF25D366).copy(alpha = 0.16f), CircleShape)
+                    ) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
+                            contentDescription = "WhatsApp",
+                            tint = Color(0xFF25D366),
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+
+                IconButton(
+                    onClick = onMessageClick,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Message, contentDescription = "Message", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(4.dp))
+
+                IconButton(
+                    onClick = onCallClick,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(AccentGreen.copy(alpha = 0.18f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(19.dp))
+                }
             }
         }
     }

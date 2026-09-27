@@ -170,7 +170,7 @@ fun MainScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = when (currentTab) {
                                     MainTab.DIALER -> "Phone Dialer"
@@ -179,11 +179,12 @@ fun MainScreen(
                                     MainTab.FAVORITES -> "Favorites"
                                 },
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp
+                                fontSize = 18.sp
                             )
+                            Spacer(Modifier.width(8.dp))
                             Text(
                                 text = "by Amit Bharat",
-                                fontSize = 11.sp,
+                                fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -260,6 +261,20 @@ fun MainScreen(
                         callLogs = callLogs,
                         speedDials = speedDials,
                         onCallClick = onCallClick,
+                        onMessageClick = { num ->
+                            val digits = num.replace(Regex("[^0-9]"), "")
+                            val norm = if (digits.length >= 10) digits.takeLast(10) else digits
+                            val thread = com.amitbharat.phonedialer.ui.messages.MessageThread(
+                                normalizedNumber = norm,
+                                displayAddress = num,
+                                contactName = contacts.find { it.numbers.contains(num) }?.name,
+                                latestBody = "",
+                                latestTimestamp = System.currentTimeMillis(),
+                                unreadCount = 0,
+                                threadIds = emptyList()
+                            )
+                            activeChatThread = thread
+                        },
                         onDeleteCallLog = onDeleteCallLog,
                         onContactClick = { name, number, photoUri ->
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri)
@@ -298,6 +313,20 @@ fun MainScreen(
                     MainTab.FAVORITES -> FavoritesScreen(
                         favorites = favorites,
                         onCallClick = { num -> onCallClick(num, 0) },
+                        onMessageClick = { num ->
+                            val digits = num.replace(Regex("[^0-9]"), "")
+                            val norm = if (digits.length >= 10) digits.takeLast(10) else digits
+                            val thread = com.amitbharat.phonedialer.ui.messages.MessageThread(
+                                normalizedNumber = norm,
+                                displayAddress = num,
+                                contactName = contacts.find { it.numbers.contains(num) }?.name,
+                                latestBody = "",
+                                latestTimestamp = System.currentTimeMillis(),
+                                unreadCount = 0,
+                                threadIds = emptyList()
+                            )
+                            activeChatThread = thread
+                        },
                         onContactClick = { name, number, photoUri, contact ->
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri, contact)
                         }

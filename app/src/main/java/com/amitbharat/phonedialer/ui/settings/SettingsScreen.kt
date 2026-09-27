@@ -68,33 +68,52 @@ fun SettingsScreen(
     var newReplyText by remember { mutableStateOf("") }
 
     // System roles verification
-    val telecomManager = remember { context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager }
-    val isDefaultDialer = remember(selectedSection) {
-        telecomManager?.defaultDialerPackage == context.packageName
+    var roleRefreshTrigger by remember { mutableIntStateOf(0) }
+    val isDefaultDialer = remember(selectedSection, roleRefreshTrigger) {
+        com.amitbharat.phonedialer.telecom.TelecomHelper.isDefaultDialer(context)
     }
-    val isDefaultSms = remember(selectedSection) {
+    val isDefaultSms = remember(selectedSection, roleRefreshTrigger) {
         Telephony.Sms.getDefaultSmsPackage(context) == context.packageName
+    }
+
+    val roleLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) {
+        roleRefreshTrigger++
     }
 
     fun requestDefaultDialer() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
             if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)) {
-                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
                 try {
-                    context.startActivity(intent)
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                    roleLauncher.launch(intent)
+                    return
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Could not open default dialer prompt", Toast.LENGTH_SHORT).show()
+                    e.printStackTrace()
                 }
             }
-        } else {
+        }
+
+        try {
             val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
                 putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
             }
+            roleLauncher.launch(intent)
+        } catch (e: Exception) {
             try {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
                 context.startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Could not open default dialer prompt", Toast.LENGTH_SHORT).show()
+            } catch (ex: Exception) {
+                try {
+                    val appDetailsIntent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    }
+                    context.startActivity(appDetailsIntent)
+                } catch (err: Exception) {
+                    Toast.makeText(context, "Could not open default dialer settings", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -103,20 +122,26 @@ fun SettingsScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
             if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
-                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
                 try {
-                    context.startActivity(intent)
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                    roleLauncher.launch(intent)
+                    return
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Could not open default SMS prompt", Toast.LENGTH_SHORT).show()
+                    e.printStackTrace()
                 }
             }
-        } else {
+        }
+
+        try {
             val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
                 putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.packageName)
             }
+            roleLauncher.launch(intent)
+        } catch (e: Exception) {
             try {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
                 context.startActivity(intent)
-            } catch (e: Exception) {
+            } catch (ex: Exception) {
                 Toast.makeText(context, "Could not open default SMS prompt", Toast.LENGTH_SHORT).show()
             }
         }
@@ -153,6 +178,47 @@ fun SettingsScreen(
                 // ==========================================
                 // CALL SETTINGS SECTION
                 // ==========================================
+
+                // 1. Default Phone / Dialer App Card
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isDefaultDialer) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    if (isDefaultDialer) Icons.Default.CheckCircle else Icons.Default.Call,
+                                    contentDescription = null,
+                                    tint = if (isDefaultDialer) AccentGreen else MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = if (isDefaultDialer) "Default Phone App (Active)" else "Set as Default Phone App",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 17.sp,
+                                    color = if (isDefaultDialer) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = if (isDefaultDialer) "Phone Dialer is currently your default application for placing and receiving calls."
+                                else "Set Phone Dialer as your default phone app to receive incoming calls with the full-screen caller ID and dial numbers directly without system chooser.",
+                                fontSize = 13.sp,
+                                color = if (isDefaultDialer) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                            )
+                            if (!isDefaultDialer) {
+                                Spacer(Modifier.height(12.dp))
+                                Button(onClick = { requestDefaultDialer() }) {
+                                    Text("Set as Default Phone App")
+                                }
+                            }
+                        }
+                    }
+                }
 
                 item {
                     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp)) {

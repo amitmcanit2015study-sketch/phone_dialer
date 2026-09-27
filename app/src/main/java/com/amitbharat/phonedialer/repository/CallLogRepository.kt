@@ -53,10 +53,19 @@ class CallLogRepository(private val context: Context) {
         if (!forceRefresh && cached != null && (now - lastLogFetchTime < 30_000)) {
             emit(cached)
         } else {
-            val deviceLogs = deduplicateLogs(fetchDeviceCallLogsDirectly())
-            cachedCallLogs = deviceLogs
-            lastLogFetchTime = now
-            emit(deviceLogs)
+            // Stage 1 (Fast Lazy Loading): Load past 3 days call logs first for instant startup
+            val recentLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = 3))
+            if (recentLogs.isNotEmpty()) {
+                cachedCallLogs = recentLogs
+                lastLogFetchTime = now
+                emit(recentLogs)
+            }
+
+            // Stage 2: Load complete call history in background and emit
+            val fullLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = null))
+            cachedCallLogs = fullLogs
+            lastLogFetchTime = System.currentTimeMillis()
+            emit(fullLogs)
         }
 
         callLogDao.getAllCallLogs().map { list ->
@@ -91,7 +100,7 @@ class CallLogRepository(private val context: Context) {
         callLogDao.clearCallLogs()
     }
 
-    fun fetchDeviceCallLogsDirectly(): List<CallLogItem> {
+    fun fetchDeviceCallLogsDirectly(daysLimit: Int? = null): List<CallLogItem> {
         val result = mutableListOf<CallLogItem>()
         try {
             // Build saved contact number sets for O(1) instant lookup
@@ -101,6 +110,13 @@ class CallLogRepository(private val context: Context) {
             val recordingsMap = getRecordingsMap()
 
             val resolver: ContentResolver = context.contentResolver
+            val (selection, selectionArgs) = if (daysLimit != null) {
+                val minDate = System.currentTimeMillis() - (daysLimit.toLong() * 24L * 60L * 60L * 1000L)
+                Pair("${CallLog.Calls.DATE} >= ?", arrayOf(minDate.toString()))
+            } else {
+                Pair(null, null)
+            }
+
             val cursor = resolver.query(
                 CallLog.Calls.CONTENT_URI,
                 arrayOf(
@@ -111,8 +127,8 @@ class CallLogRepository(private val context: Context) {
                     CallLog.Calls.DATE,
                     CallLog.Calls.DURATION
                 ),
-                null,
-                null,
+                selection,
+                selectionArgs,
                 CallLog.Calls.DATE + " DESC"
             )
 

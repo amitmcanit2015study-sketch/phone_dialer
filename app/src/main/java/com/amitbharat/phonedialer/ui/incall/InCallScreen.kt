@@ -308,27 +308,36 @@ fun InCallScreen(
                 }
             }
 
-            Spacer(Modifier.height(32.dp))
+            // Top-to-middle spacer to position Profile Picture strictly in the middle (Req 11)
+            Spacer(modifier = Modifier.weight(1f))
 
-            // Animated Pulsing Contact Avatar Hero (Item 12)
+            // Attractive Centered Profile Picture Hero with Glow & Pulse Rings (Req 11)
             Box(contentAlignment = Alignment.Center) {
                 if (isIncomingRinging) {
                     Box(
                         modifier = Modifier
                             .scale(pulseScale)
-                            .size(170.dp)
+                            .size(200.dp)
                             .clip(CircleShape)
-                            .background(AccentGreen.copy(alpha = 0.25f))
+                            .background(AccentGreen.copy(alpha = 0.22f))
                     )
                 }
-                ContactAvatar(
-                    name = displayName,
-                    photoUri = state.photoUri,
-                    size = 150.dp,
-                    fontSize = 54.sp
-                )
+                Surface(
+                    shape = CircleShape,
+                    shadowElevation = 16.dp,
+                    border = androidx.compose.foundation.BorderStroke(3.dp, Color.White.copy(alpha = 0.85f)),
+                    color = Color.Transparent
+                ) {
+                    ContactAvatar(
+                        name = displayName,
+                        photoUri = state.photoUri,
+                        size = 170.dp,
+                        fontSize = 58.sp
+                    )
+                }
             }
 
+            // Middle-to-bottom spacer to balance profile photo exactly in the center
             Spacer(modifier = Modifier.weight(1f))
 
             // Action Control Panel (Item 12: Incoming Call Screen UI)
@@ -577,6 +586,32 @@ fun InCallScreen(
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                         }
                     }
+
+                    if (dialedDtmfDigits.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp, horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = dialedDtmfDigits,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1
+                            )
+                            IconButton(onClick = {
+                                if (dialedDtmfDigits.isNotEmpty()) dialedDtmfDigits = dialedDtmfDigits.dropLast(1)
+                            }) {
+                                Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Backspace", tint = Color.White)
+                            }
+                        }
+                    } else {
+                        Spacer(Modifier.height(10.dp))
+                    }
+
                     val keypadDigits = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#")
                     keypadDigits.chunked(3).forEach { row ->
                         Row(
@@ -586,13 +621,16 @@ fun InCallScreen(
                             row.forEach { digit ->
                                 Box(
                                     modifier = Modifier
-                                        .size(68.dp, 48.dp)
+                                        .size(72.dp, 52.dp)
                                         .clip(RoundedCornerShape(14.dp))
                                         .background(Color(0xFF1E293B))
-                                        .clickable { onDtmf(digit[0]) },
+                                        .clickable {
+                                            dialedDtmfDigits += digit
+                                            onDtmf(digit[0])
+                                        },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(digit, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text(digit, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 }
                             }
                         }

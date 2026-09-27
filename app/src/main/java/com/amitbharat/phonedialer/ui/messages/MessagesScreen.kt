@@ -165,62 +165,7 @@ fun MessagesScreen(
                     .fillMaxSize()
                     .padding(horizontal = 12.dp, vertical = 2.dp)
             ) {
-                // Top-Anchored Search Bar when isSearchOpen is true
-                AnimatedVisibility(
-                    visible = isSearchOpen,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(2.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            OutlinedTextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
-                                placeholder = { Text("Search messages…", fontSize = 14.sp) },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .focusRequester(focusRequester),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedBorderColor = Color.Transparent
-                                )
-                            )
-                            IconButton(onClick = {
-                                if (searchQuery.isNotEmpty()) {
-                                    searchQuery = ""
-                                } else {
-                                    isSearchOpen = false
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close Search",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
+            ) {
 
                 // Standard Header (When search is inactive)
                 if (!isSearchOpen) {
@@ -396,6 +341,60 @@ fun MessagesScreen(
                         modifier = Modifier.size(64.dp).shadow(12.dp, CircleShape)
                     ) {
                         Icon(Icons.Default.Chat, contentDescription = "New Message", modifier = Modifier.size(28.dp))
+                    }
+                }
+            }
+
+            // Bottom-Anchored Search Bar directly above keyboard when isSearchOpen is true (Req 2)
+            if (isSearchOpen) {
+                Surface(
+                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 12.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .imePadding()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search messages…", fontSize = 14.sp) },
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(focusRequester),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent
+                            )
+                        )
+                        IconButton(onClick = {
+                            if (searchQuery.isNotEmpty()) {
+                                searchQuery = ""
+                            } else {
+                                isSearchOpen = false
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -676,10 +675,37 @@ fun NewMessageComposerScreen(
                         return@Button
                     }
 
+                    val repo = com.amitbharat.phonedialer.repository.SmsRepository.getInstance(context)
+
                     try {
                         val smsManager = SmsManager.getDefault()
                         for (r in finalRecipients) {
                             smsManager.sendTextMessage(r.number, null, messageText, null, null)
+
+                            // Save to Sent box and in-memory cache so thread immediately displays it
+                            try {
+                                val values = android.content.ContentValues().apply {
+                                    put(Telephony.Sms.ADDRESS, r.number)
+                                    put(Telephony.Sms.BODY, messageText)
+                                    put(Telephony.Sms.DATE, System.currentTimeMillis())
+                                    put(Telephony.Sms.READ, 1)
+                                    put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT)
+                                }
+                                context.contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
+                            } catch (e: Exception) {}
+
+                            val sentItem = SmsMessageItem(
+                                id = System.currentTimeMillis(),
+                                address = r.number,
+                                body = messageText,
+                                timestamp = System.currentTimeMillis(),
+                                isOutgoing = true,
+                                isRead = true,
+                                status = 0,
+                                isDelivered = true
+                            )
+                            repo.addSentMessage(sentItem)
+                            repo.updateThreadOptimistic(r.number, messageText, r.name)
                         }
                         Toast.makeText(context, "Message sent to ${finalRecipients.size} recipient(s)", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
@@ -795,30 +821,35 @@ fun ChatThreadScreen(
         list
     }
 
-    val allMessages = remember(messages, localSentMessages) {
-        (messages + localSentMessages)
+    val repoSentMessages = remember(thread.displayAddress, refreshTrigger) {
+        smsRepo.getRecentSentMessages(thread.displayAddress)
+    }
+
+    val allMessages = remember(messages, localSentMessages, repoSentMessages) {
+        (messages + localSentMessages + repoSentMessages)
             .distinctBy { "${it.address}_${it.body}_${it.timestamp / 3000}" }
             .sortedBy { it.timestamp }
     }
 
-    // Keep recent messages visible above keyboard whenever keyboard opens or input is focused
+    // Keep recent messages visible above keyboard whenever keyboard opens or input is focused (Req 4)
     LaunchedEffect(isImeVisible, imeBottom) {
         if (allMessages.isNotEmpty()) {
             kotlinx.coroutines.delay(60)
-            listState.scrollToItem(allMessages.size - 1)
+            listState.animateScrollToItem(allMessages.size - 1)
         }
     }
 
     LaunchedEffect(isInputFocused) {
         if (isInputFocused && allMessages.isNotEmpty()) {
-            kotlinx.coroutines.delay(120)
-            listState.scrollToItem(allMessages.size - 1)
+            kotlinx.coroutines.delay(80)
+            listState.animateScrollToItem(allMessages.size - 1)
         }
     }
 
     LaunchedEffect(allMessages.size) {
         if (allMessages.isNotEmpty()) {
-            listState.scrollToItem(allMessages.size - 1)
+            kotlinx.coroutines.delay(50)
+            listState.animateScrollToItem(allMessages.size - 1)
         }
     }
 
@@ -921,13 +952,13 @@ fun ChatThreadScreen(
                                     context.contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
                                 } catch (e: Exception) {}
 
-                                com.amitbharat.phonedialer.repository.SmsRepository.getInstance(context)
-                                    .updateThreadOptimistic(thread.displayAddress, textToSend, thread.contactName)
+                                smsRepo.addSentMessage(immediateItem)
+                                smsRepo.updateThreadOptimistic(thread.displayAddress, textToSend, thread.contactName)
 
                                 refreshTrigger++
                                 coroutineScope.launch {
-                                    kotlinx.coroutines.delay(50)
-                                    listState.scrollToItem(allMessages.size - 1)
+                                    kotlinx.coroutines.delay(60)
+                                    listState.animateScrollToItem(allMessages.size - 1)
                                 }
                             }
                         },

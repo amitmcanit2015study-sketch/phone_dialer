@@ -78,6 +78,7 @@ fun DialerScreen(
     callLogs: List<CallLogItem>,
     speedDials: List<SpeedDialItem>,
     onCallClick: (String, Int) -> Unit,
+    onMessageClick: (String) -> Unit = {},
     onDeleteCallLog: (Long) -> Unit,
     onContactClick: (name: String, number: String, photoUri: String?) -> Unit,
     modifier: Modifier = Modifier
@@ -239,63 +240,6 @@ fun DialerScreen(
 
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
-
-            // Top-Anchored Search Bar when isSearchOpen is true
-            AnimatedVisibility(
-                visible = isSearchOpen,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    elevation = CardDefaults.cardElevation(2.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search call history or contact…", fontSize = 14.sp) },
-                            singleLine = true,
-                            modifier = Modifier
-                                .weight(1f)
-                                .focusRequester(focusRequester),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent
-                            )
-                        )
-                        IconButton(onClick = {
-                            if (searchQuery.isNotEmpty()) {
-                                searchQuery = ""
-                            } else {
-                                isSearchOpen = false
-                            }
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close Search",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
 
             // Horizontal Favorites Bar
             if (favorites.isNotEmpty() && searchQuery.isEmpty() && enteredNumber.isEmpty()) {
@@ -561,13 +505,55 @@ fun DialerScreen(
                                                 }
                                             }
 
-                                            IconButton(
-                                                onClick = { onCallClick(group.number, 0) },
-                                                modifier = Modifier
-                                                    .size(42.dp)
-                                                    .background(AccentGreen.copy(alpha = 0.15f), CircleShape)
+                                            // Action buttons sequence from the last: Call, Message, WhatsApp (Left to Right: WhatsApp -> Message -> Call)
+                                            val isWhatsApp = remember(group.number) {
+                                                com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(number = group.number)
+                                            }
+
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
+                                                if (isWhatsApp) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            com.amitbharat.phonedialer.utils.WhatsAppHelper.openWhatsAppChat(context, group.number)
+                                                        },
+                                                        modifier = Modifier
+                                                            .size(38.dp)
+                                                            .background(Color(0xFF25D366).copy(alpha = 0.16f), CircleShape)
+                                                    ) {
+                                                        Icon(
+                                                            painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
+                                                            contentDescription = "WhatsApp",
+                                                            tint = Color(0xFF25D366),
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                IconButton(
+                                                    onClick = { onMessageClick(group.number) },
+                                                    modifier = Modifier
+                                                        .size(38.dp)
+                                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Message,
+                                                        contentDescription = "Message",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(19.dp)
+                                                    )
+                                                }
+
+                                                IconButton(
+                                                    onClick = { onCallClick(group.number, 0) },
+                                                    modifier = Modifier
+                                                        .size(38.dp)
+                                                        .background(AccentGreen.copy(alpha = 0.18f), CircleShape)
+                                                ) {
+                                                    Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen, modifier = Modifier.size(20.dp))
+                                                }
                                             }
                                         }
                                     }
@@ -627,6 +613,60 @@ fun DialerScreen(
                     modifier = Modifier.size(64.dp).shadow(12.dp, CircleShape)
                 ) {
                     Icon(Icons.Default.Dialpad, contentDescription = "Open Dialpad", modifier = Modifier.size(30.dp))
+                }
+            }
+        }
+
+        // Bottom-Anchored Search Bar directly above the keyboard when isSearchOpen is true (Req 2)
+        if (isSearchOpen) {
+            Surface(
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 12.dp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .imePadding()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search call history or contact…", fontSize = 14.sp) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent
+                        )
+                    )
+                    IconButton(onClick = {
+                        if (searchQuery.isNotEmpty()) {
+                            searchQuery = ""
+                        } else {
+                            isSearchOpen = false
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Search",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
