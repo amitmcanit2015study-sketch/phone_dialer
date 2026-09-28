@@ -53,6 +53,7 @@ import com.amitbharat.phonedialer.ui.theme.AccentGreen
 import com.amitbharat.phonedialer.ui.theme.AccentRed
 import com.amitbharat.phonedialer.utils.ContactAvatar
 import com.amitbharat.phonedialer.utils.PreferencesManager
+import com.amitbharat.phonedialer.utils.SimHelper
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -838,12 +839,15 @@ fun DialerScreen(
                     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         keys.chunked(3).forEach { row ->
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 row.forEach { (digit, speedIndex) ->
                                     DialKeyModern(
                                         digit = digit,
+                                        modifier = Modifier.weight(1f),
                                         onClick = { handleKeyPress(digit) },
                                         onLongClick = { if (speedIndex > 0 || digit == "0") handleLongPressDigit(speedIndex) }
                                     )
@@ -852,24 +856,119 @@ fun DialerScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
 
-                    Button(
-                        onClick = {
-                            if (enteredNumber.isNotBlank()) {
-                                onCallClick(enteredNumber, 0)
+                    val context = LocalContext.current
+                    val simCards = remember(context) { SimHelper.getSimCards(context) }
+                    val defaultSim = simCards.find { it.isDefault }
+                    val hasDefaultSim = defaultSim != null && (simCards.size == 1 || PreferencesManager.getInstance(context).getDefaultSim() != -1)
+
+                    if (!hasDefaultSim && simCards.size >= 2) {
+                        // If default call is not set: 2 call buttons for SIM 1 and SIM 2
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            val sim1 = simCards[0]
+                            val sim1Text = if (sim1.number.isNotBlank()) "${sim1.carrierName} ${sim1.number}" else sim1.carrierName
+
+                            Button(
+                                onClick = {
+                                    if (enteredNumber.isNotBlank()) {
+                                        onCallClick(enteredNumber, 0)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                                shape = RoundedCornerShape(22.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                                    .shadow(6.dp, RoundedCornerShape(22.dp))
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = "Call SIM 1", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = sim1Text,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                        shape = RoundedCornerShape(28.dp),
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .height(56.dp)
-                            .shadow(8.dp, RoundedCornerShape(28.dp))
-                    ) {
-                        Icon(Icons.Default.Call, contentDescription = "Call", tint = Color.White, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text("CALL", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+
+                            val sim2 = simCards[1]
+                            val sim2Text = if (sim2.number.isNotBlank()) "${sim2.carrierName} ${sim2.number}" else sim2.carrierName
+
+                            Button(
+                                onClick = {
+                                    if (enteredNumber.isNotBlank()) {
+                                        onCallClick(enteredNumber, 1)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A)),
+                                shape = RoundedCornerShape(22.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                                    .shadow(6.dp, RoundedCornerShape(22.dp))
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = "Call SIM 2", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = sim2Text,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    } else {
+                        // If default call is set: call button in small size with sim slot number and contact number inside that
+                        val activeSim = defaultSim ?: simCards.firstOrNull()
+                        val slotNum = (activeSim?.slotIndex ?: 0) + 1
+                        val activeNum = activeSim?.number?.takeIf { it.isNotBlank() } ?: ""
+                        val defaultButtonText = buildString {
+                            append("SIM $slotNum")
+                            if (activeSim?.carrierName?.isNotBlank() == true) {
+                                append(" • ${activeSim.carrierName}")
+                            }
+                            if (activeNum.isNotBlank()) {
+                                append(" $activeNum")
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                if (enteredNumber.isNotBlank()) {
+                                    onCallClick(enteredNumber, activeSim?.slotIndex ?: 0)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                            shape = RoundedCornerShape(22.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth(0.72f)
+                                .height(46.dp)
+                                .shadow(6.dp, RoundedCornerShape(22.dp))
+                        ) {
+                            Icon(Icons.Default.Call, contentDescription = "Call", tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = defaultButtonText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -894,7 +993,7 @@ fun DialKeyModern(
         color = boxBg,
         border = boxBorder,
         modifier = modifier
-            .size(66.dp)
+            .height(58.dp)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick

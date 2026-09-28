@@ -27,11 +27,32 @@ object TelecomHelper {
         val uri = Uri.fromParts("tel", cleanNumber, null)
         val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
 
+        val phoneAccounts = try {
+            if (androidx.core.app.ActivityCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.READ_PHONE_STATE
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                telecomManager?.callCapablePhoneAccounts ?: emptyList()
+            } else emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        val targetAccount = if (simSlot in phoneAccounts.indices) {
+            phoneAccounts[simSlot]
+        } else {
+            phoneAccounts.firstOrNull()
+        }
+
         try {
             // Direct TelecomManager placement without system app chooser popup
             val extras = Bundle().apply {
                 putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, false)
                 putBoolean(TelecomManager.EXTRA_START_CALL_WITH_VIDEO_STATE, false)
+                if (targetAccount != null) {
+                    putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, targetAccount)
+                }
             }
             telecomManager?.placeCall(uri, extras)
         } catch (e: SecurityException) {
@@ -39,6 +60,14 @@ object TelecomHelper {
             try {
                 val callIntent = Intent(Intent.ACTION_CALL, uri).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    putExtra("com.android.phone.force.slot", true)
+                    putExtra("Cdma_SimId", simSlot)
+                    putExtra("simSlot", simSlot)
+                    putExtra("slot", simSlot)
+                    putExtra("sim_slot", simSlot)
+                    if (targetAccount != null) {
+                        putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, targetAccount)
+                    }
                 }
                 context.startActivity(callIntent)
             } catch (err: Exception) {

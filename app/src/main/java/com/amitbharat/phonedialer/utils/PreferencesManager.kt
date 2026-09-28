@@ -48,7 +48,7 @@ class PreferencesManager private constructor(context: Context) {
         prefs.edit().putBoolean("dialpad_sound", enabled).apply()
     }
 
-    fun getDefaultSim(): Int = prefs.getInt("default_sim", 0)
+    fun getDefaultSim(): Int = prefs.getInt("default_sim", -1)
     fun setDefaultSim(sim: Int) = prefs.edit().putInt("default_sim", sim).apply()
 
     fun isBlockUnknownCallsEnabled(): Boolean = prefs.getBoolean("block_unknown_calls", false)
