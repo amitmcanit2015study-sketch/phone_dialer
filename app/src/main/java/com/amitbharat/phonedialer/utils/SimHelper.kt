@@ -23,7 +23,23 @@ data class SimSlotInfo(
 
 object SimHelper {
 
-    fun getSimCards(context: Context): List<SimSlotInfo> {
+    @Volatile
+    private var cachedSimCards: List<SimSlotInfo>? = null
+    @Volatile
+    private var lastSimCheckTime: Long = 0L
+
+    fun invalidateCache() {
+        cachedSimCards = null
+        lastSimCheckTime = 0L
+    }
+
+    fun getSimCards(context: Context, forceRefresh: Boolean = false): List<SimSlotInfo> {
+        val now = System.currentTimeMillis()
+        val cached = cachedSimCards
+        if (!forceRefresh && cached != null && (now - lastSimCheckTime < 60_000L)) {
+            return cached
+        }
+
         val result = mutableListOf<SimSlotInfo>()
         val subscriptionManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as? SubscriptionManager
         val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
@@ -101,8 +117,8 @@ object SimHelper {
 
                 val isDef = when {
                     userDefaultSimPref >= 0 -> userDefaultSimPref == slot
-                    defaultAccount != null -> matchingHandle == defaultAccount
                     defaultVoiceSubId != SubscriptionManager.INVALID_SUBSCRIPTION_ID -> defaultVoiceSubId == sub.subscriptionId
+                    defaultAccount != null -> matchingHandle == defaultAccount || defaultAccount.id.contains(sub.subscriptionId.toString())
                     else -> false
                 }
 
@@ -156,6 +172,9 @@ object SimHelper {
             )
         }
 
-        return result.sortedBy { it.slotIndex }
+        val sorted = result.sortedBy { it.slotIndex }
+        cachedSimCards = sorted
+        lastSimCheckTime = now
+        return sorted
     }
 }

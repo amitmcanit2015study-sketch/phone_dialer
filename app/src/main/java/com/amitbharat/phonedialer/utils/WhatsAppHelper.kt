@@ -28,9 +28,19 @@ object WhatsAppHelper {
     @Volatile
     private var isInitialized = false
 
+    fun extractDigits(raw: String?): String {
+        if (raw.isNullOrBlank()) return ""
+        val len = raw.length
+        val sb = StringBuilder(len)
+        for (i in 0 until len) {
+            val c = raw[i]
+            if (c in '0'..'9') sb.append(c)
+        }
+        return sb.toString()
+    }
+
     private fun addNumberVariants(raw: String?, set: MutableSet<String>) {
-        if (raw.isNullOrBlank()) return
-        val digits = raw.replace(Regex("[^0-9]"), "")
+        val digits = extractDigits(raw)
         if (digits.isBlank()) return
         set.add(digits)
         if (digits.length >= 10) {
@@ -42,8 +52,7 @@ object WhatsAppHelper {
     }
 
     private fun normalize(raw: String?): String {
-        if (raw.isNullOrBlank()) return ""
-        val digits = raw.replace(Regex("[^0-9]"), "")
+        val digits = extractDigits(raw)
         return if (digits.length >= 10) digits.takeLast(10) else digits
     }
 
@@ -148,7 +157,7 @@ object WhatsAppHelper {
             return true
         }
         if (!number.isNullOrBlank()) {
-            val digits = number.replace(Regex("[^0-9]"), "")
+            val digits = extractDigits(number)
             if (digits.isNotBlank()) {
                 if (whatsAppNumbers.contains(digits)) return true
                 if (digits.length >= 10 && whatsAppNumbers.contains(digits.takeLast(10))) return true
@@ -166,8 +175,9 @@ object WhatsAppHelper {
         if (contactId != null && contactId > 0 && whatsAppContactIds.contains(contactId)) {
             return true
         }
-        for (num in numbers) {
-            val digits = num.replace(Regex("[^0-9]"), "")
+        val size = numbers.size
+        for (i in 0 until size) {
+            val digits = extractDigits(numbers[i])
             if (digits.isNotBlank()) {
                 if (whatsAppNumbers.contains(digits)) return true
                 if (digits.length >= 10 && whatsAppNumbers.contains(digits.takeLast(10))) return true

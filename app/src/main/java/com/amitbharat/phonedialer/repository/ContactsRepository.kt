@@ -34,18 +34,49 @@ class ContactsRepository(private val context: Context) {
             cachedContacts = contacts
             lastFetchTime = System.currentTimeMillis()
         }
+
+        private fun encodeNumbers(numbers: List<String>): String = numbers.joinToString(";")
+
+        private fun extractDigitsAndPlus(raw: String): String {
+            val len = raw.length
+            val sb = StringBuilder(len)
+            for (i in 0 until len) {
+                val c = raw[i]
+                if (c in '0'..'9' || c == '+') sb.append(c)
+            }
+            return sb.toString()
+        }
+    }
+
+    private fun decodeNumbers(str: String): List<String> {
+        if (str.isBlank()) return emptyList()
+        if (str.startsWith("[")) {
+            return try {
+                gson.fromJson<List<String>>(str, type) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+        return str.split(";").filter { it.isNotBlank() }
     }
 
     fun getCachedContacts(): List<Contact> = cachedContacts ?: emptyList()
 
     private fun deduplicateContacts(contacts: List<Contact>): List<Contact> {
-        val seen = mutableSetOf<String>()
-        val result = mutableListOf<Contact>()
-        for (c in contacts) {
+        val seen = HashSet<String>(contacts.size)
+        val result = ArrayList<Contact>(contacts.size)
+        for (i in contacts.indices) {
+            val c = contacts[i]
             val normName = c.name.trim().lowercase()
-            val validNumbers = c.numbers.filter { num -> num.filter { it.isDigit() }.length >= 3 }.distinct()
+            val validNumbers = c.numbers.filter { num ->
+                var digitCount = 0
+                for (j in 0 until num.length) {
+                    if (num[j] in '0'..'9') digitCount++
+                }
+                digitCount >= 3
+            }.distinct()
             if (validNumbers.isEmpty()) continue
-            val primaryNum = validNumbers.first().replace(Regex("[^0-9+]"), "")
+            val primaryNum = extractDigitsAndPlus(validNumbers.first())
             val key = if (normName.isNotBlank() && normName != "unknown") normName else primaryNum
             if (key.isNotBlank() && seen.add(key)) {
                 result.add(c.copy(numbers = validNumbers))
@@ -60,21 +91,12 @@ class ContactsRepository(private val context: Context) {
         if (!forceRefresh && cached != null && (now - lastFetchTime < 60_000)) {
             emit(cached)
         } else {
-            // Stage 1: If no cache, quickly load starred/favorites first so header and favorites appear instantly
-            if (cached == null || cached.isEmpty()) {
-                val starred = deduplicateContacts(fetchDeviceContactsDirectly(onlyStarred = true))
-                if (starred.isNotEmpty()) {
-                    emit(starred)
-                }
-            }
-
-            // Stage 2: Fetch full contacts and emit
             val deviceContacts = deduplicateContacts(fetchDeviceContactsDirectly(onlyStarred = false))
             cachedContacts = deviceContacts
             lastFetchTime = now
             emit(deviceContacts)
 
-            // Asynchronously refresh WhatsApp contacts map in background
+            // Asynchronously refresh WhatsApp contacts map in background without blocking
             try {
                 com.amitbharat.phonedialer.utils.WhatsAppHelper.refreshWhatsAppContacts(context)
             } catch (e: Exception) {}
@@ -82,7 +104,7 @@ class ContactsRepository(private val context: Context) {
 
         contactDao.getAllContacts().map { list ->
             val cur = cachedContacts ?: emptyList()
-            if (list.isNotEmpty()) deduplicateContacts(list.map { it.toModel(gson, type) }) else cur
+            if (list.isNotEmpty()) deduplicateContacts(list.map { it.toModel() }) else cur
         }.collect {
             cachedContacts = deduplicateContacts(it)
             emit(cachedContacts!!)
@@ -94,7 +116,7 @@ class ContactsRepository(private val context: Context) {
         emit(favorites)
 
         contactDao.getFavoriteContacts().map { list ->
-            if (list.isNotEmpty()) deduplicateContacts(list.map { it.toModel(gson, type) }) else favorites
+            if (list.isNotEmpty()) deduplicateContacts(list.map { it.toModel() }) else favorites
         }.collect {
             emit(deduplicateContacts(it))
         }
@@ -103,7 +125,7 @@ class ContactsRepository(private val context: Context) {
     suspend fun addContact(contact: Contact): Long {
         val entity = ContactEntity(
             name = contact.name,
-            numbersJson = gson.toJson(contact.numbers),
+            numbersJson = encodeNumbers(contact.numbers),
             photoUri = contact.photoUri,
             email = contact.email,
             isFavorite = contact.isFavorite,
@@ -117,7 +139,7 @@ class ContactsRepository(private val context: Context) {
         val entity = ContactEntity(
             id = contact.id,
             name = contact.name,
-            numbersJson = gson.toJson(contact.numbers),
+            numbersJson = encodeNumbers(contact.numbers),
             photoUri = contact.photoUri,
             email = contact.email,
             isFavorite = contact.isFavorite,
@@ -131,7 +153,7 @@ class ContactsRepository(private val context: Context) {
         val entity = ContactEntity(
             id = contact.id,
             name = contact.name,
-            numbersJson = gson.toJson(contact.numbers),
+            numbersJson = encodeNumbers(contact.numbers),
             photoUri = contact.photoUri,
             email = contact.email,
             isFavorite = contact.isFavorite
@@ -159,7 +181,6 @@ class ContactsRepository(private val context: Context) {
             )
 
             cursor?.use {
-                // Group by normalized name to prevent duplicate cards (e.g. Ankool, Ankool...)
                 val contactMap = LinkedHashMap<String, MutableList<String>>()
                 val photoMap = HashMap<String, String?>()
                 val starMap = HashMap<String, Boolean>()
@@ -181,8 +202,11 @@ class ContactsRepository(private val context: Context) {
                     val isStarred = if (starIdx >= 0) it.getInt(starIdx) == 1 else false
                     val contactId = if (idIdx >= 0) it.getLong(idIdx) else 0L
 
-                    val digitsOnly = number.filter { it.isDigit() }
-                    if (number.isNotBlank() && digitsOnly.length >= 3) {
+                    var digitCount = 0
+                    for (k in 0 until number.length) {
+                        if (number[k] in '0'..'9') digitCount++
+                    }
+                    if (number.isNotBlank() && digitCount >= 3) {
                         contactMap.getOrPut(normKey) { mutableListOf() }.add(number)
                         displayNameMap[normKey] = name
                         if (photo != null && photoMap[normKey] == null) photoMap[normKey] = photo
@@ -211,25 +235,21 @@ class ContactsRepository(private val context: Context) {
     }
 
     suspend fun syncDeviceContacts() = withContext(Dispatchers.IO) {
-        contactDao.deleteAllContacts()
         val contacts = fetchDeviceContactsDirectly()
-        contacts.forEach { c ->
-            val entity = ContactEntity(
+        val entities = contacts.map { c ->
+            ContactEntity(
                 name = c.name,
-                numbersJson = gson.toJson(c.numbers),
+                numbersJson = encodeNumbers(c.numbers),
                 photoUri = c.photoUri,
                 isFavorite = c.isFavorite
             )
-            contactDao.insertContact(entity)
         }
+        contactDao.deleteAllContacts()
+        contactDao.insertContacts(entities)
     }
 
-    private fun ContactEntity.toModel(gson: Gson, type: java.lang.reflect.Type): Contact {
-        val numbers: List<String> = try {
-            gson.fromJson(numbersJson, type) ?: emptyList()
-        } catch (e: Exception) {
-            emptyList()
-        }
+    private fun ContactEntity.toModel(): Contact {
+        val numbers: List<String> = decodeNumbers(numbersJson)
         return Contact(
             id = id,
             name = name,

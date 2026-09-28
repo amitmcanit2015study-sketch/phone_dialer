@@ -49,14 +49,41 @@ class CallLogRepository(private val context: Context) {
 
     fun getCachedCallLogs(): List<CallLogItem> = cachedCallLogs ?: emptyList()
 
+    private fun extractDigits(raw: String): String {
+        val len = raw.length
+        val sb = StringBuilder(len)
+        for (i in 0 until len) {
+            val c = raw[i]
+            if (c in '0'..'9') sb.append(c)
+        }
+        return sb.toString()
+    }
+
+    private fun extractCleanNumber(raw: String): String {
+        val len = raw.length
+        val sb = StringBuilder(len)
+        for (i in 0 until len) {
+            val c = raw[i]
+            if (c in '0'..'9' || c == '+') sb.append(c)
+        }
+        return sb.toString()
+    }
+
     private fun deduplicateLogs(logs: List<CallLogItem>): List<CallLogItem> {
-        return logs.filter { item ->
-            val digitsOnly = item.number.filter { it.isDigit() }
-            digitsOnly.length >= 3
-        }.distinctBy { item ->
-            val cleanNum = item.number.replace(Regex("[^0-9+]"), "")
-            "${cleanNum}_${item.timestamp}_${item.callType.name}_${item.duration}"
-        }.sortedByDescending { it.timestamp }
+        val seen = HashSet<String>(logs.size)
+        val result = ArrayList<CallLogItem>(logs.size)
+        for (i in logs.indices) {
+            val item = logs[i]
+            val digits = extractDigits(item.number)
+            if (digits.length < 3) continue
+            val cleanNum = extractCleanNumber(item.number)
+            val key = "${cleanNum}_${item.timestamp}_${item.callType.name}_${item.duration}"
+            if (seen.add(key)) {
+                result.add(item)
+            }
+        }
+        result.sortByDescending { it.timestamp }
+        return result
     }
 
     fun getAllCallLogs(forceRefresh: Boolean = false): Flow<List<CallLogItem>> = flow {
@@ -216,8 +243,8 @@ class CallLogRepository(private val context: Context) {
         if (cached.isNotEmpty()) {
             for (contact in cached) {
                 for (num in contact.numbers) {
-                    val clean = num.replace(Regex("[^0-9+]"), "")
-                    val digits = num.replace(Regex("[^0-9]"), "")
+                    val clean = extractCleanNumber(num)
+                    val digits = extractDigits(num)
                     if (clean.isNotBlank()) exactSet.add(clean)
                     if (digits.length >= 10) last10Set.add(digits.takeLast(10))
                     else if (digits.isNotBlank()) last10Set.add(digits)
@@ -239,8 +266,8 @@ class CallLogRepository(private val context: Context) {
                 val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
                 while (it.moveToNext()) {
                     val raw = if (numIdx >= 0) it.getString(numIdx) ?: "" else ""
-                    val clean = raw.replace(Regex("[^0-9+]"), "")
-                    val digits = raw.replace(Regex("[^0-9]"), "")
+                    val clean = extractCleanNumber(raw)
+                    val digits = extractDigits(raw)
                     if (clean.isNotBlank()) exactSet.add(clean)
                     if (digits.length >= 10) last10Set.add(digits.takeLast(10))
                     else if (digits.isNotBlank()) last10Set.add(digits)

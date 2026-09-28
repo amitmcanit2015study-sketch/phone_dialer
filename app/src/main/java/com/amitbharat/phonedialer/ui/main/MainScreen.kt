@@ -50,7 +50,6 @@ fun MainScreen(
     onCallClick: (String, Int) -> Unit,
     onAddContact: (Contact) -> Unit,
     onToggleFavorite: (Contact) -> Unit,
-    onDeleteContact: (Contact) -> Unit,
     onDeleteCallLog: (Long) -> Unit,
     onSyncDeviceContacts: () -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
@@ -93,8 +92,6 @@ fun MainScreen(
             activeChatThread = thread
         }
     }
-    
-    var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
     fun navigateToTab(tab: MainTab) {
         isSearchActive = false
@@ -339,7 +336,6 @@ fun MainScreen(
                         },
                         onAddContact = onAddContact,
                         onToggleFavorite = onToggleFavorite,
-                        onDeleteContact = onDeleteContact,
                         onSyncDeviceContacts = onSyncDeviceContacts,
                         onContactClick = { name, number, photoUri, contact ->
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri, contact)

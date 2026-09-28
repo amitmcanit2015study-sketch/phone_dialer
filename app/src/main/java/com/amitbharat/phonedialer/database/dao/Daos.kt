@@ -18,6 +18,9 @@ interface ContactDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertContact(contact: ContactEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertContacts(contacts: List<ContactEntity>)
+
     @Update
     suspend fun updateContact(contact: ContactEntity)
 
@@ -44,6 +47,9 @@ interface CallLogDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCallLog(callLog: CallLogEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCallLogs(callLogs: List<CallLogEntity>)
 
     @Query("DELETE FROM call_logs WHERE id = :id")
     suspend fun deleteCallLog(id: Long)

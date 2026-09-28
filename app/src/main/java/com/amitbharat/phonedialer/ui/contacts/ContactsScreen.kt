@@ -41,8 +41,7 @@ fun ContactsScreen(
     onCallClick: (String) -> Unit,
     onMessageClick: (String) -> Unit,
     onAddContact: (Contact) -> Unit,
-    onToggleFavorite: (Contact) -> Unit,
-    onDeleteContact: (Contact) -> Unit,
+    onToggleFavorite: (Contact) -> Unit = {},
     onSyncDeviceContacts: () -> Unit,
     onContactClick: (name: String, number: String, photoUri: String?, contact: Contact) -> Unit,
     onSearchActive: (Boolean) -> Unit = {},
@@ -161,29 +160,35 @@ fun ContactsScreen(
                                 .padding(end = 26.dp),
                             contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
                         ) {
-                            items(filteredContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
+                            items(filteredContacts, key = { it.id }) { contact ->
                                 ContactItemRow(
                                     contact = contact,
                                     onCallClick = { onCallClick(contact.numbers.firstOrNull() ?: "") },
                                     onMessageClick = { onMessageClick(contact.numbers.firstOrNull() ?: "") },
-                                    onToggleFavorite = { onToggleFavorite(contact) },
                                     onContactClick = { onContactClick(contact.name, contact.numbers.firstOrNull() ?: "", contact.photoUri, contact) }
                                 )
                             }
                         }
                         
-                        val alphabet = remember(filteredContacts) {
-                            filteredContacts.mapNotNull { it.name.firstOrNull()?.uppercaseChar() }
-                                .filter { it.isLetter() }
-                                .distinct()
-                                .sorted()
+                        val (alphabet, letterIndices) = remember(filteredContacts) {
+                            val letters = mutableListOf<Char>()
+                            val map = HashMap<Char, Int>()
+                            val count = filteredContacts.size
+                            for (i in 0 until count) {
+                                val ch = filteredContacts[i].name.firstOrNull()?.uppercaseChar()
+                                if (ch != null && ch.isLetter() && !map.containsKey(ch)) {
+                                    letters.add(ch)
+                                    map[ch] = i
+                                }
+                            }
+                            letters.sort()
+                            Pair(letters, map)
                         }
                         
                         AlphabetScroller(
                             letters = alphabet,
                             onLetterSelect = { letter ->
-                                val index = filteredContacts.indexOfFirst { it.name.firstOrNull()?.uppercaseChar() == letter }
-                                if (index >= 0) {
+                                letterIndices[letter]?.let { index ->
                                     coroutineScope.launch {
                                         listState.scrollToItem(index)
                                     }
@@ -340,7 +345,6 @@ fun ContactItemRow(
     contact: Contact,
     onCallClick: () -> Unit,
     onMessageClick: () -> Unit,
-    onToggleFavorite: () -> Unit,
     onContactClick: () -> Unit
 ) {
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f

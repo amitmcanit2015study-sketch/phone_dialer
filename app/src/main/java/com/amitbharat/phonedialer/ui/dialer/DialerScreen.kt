@@ -74,6 +74,33 @@ data class DayConsolidatedLog(
     val calls: List<CallLogItem>
 )
 
+private val DIALPAD_ROWS = listOf(
+    listOf(Pair("1", 1), Pair("2", 2), Pair("3", 3)),
+    listOf(Pair("4", 4), Pair("5", 5), Pair("6", 6)),
+    listOf(Pair("7", 7), Pair("8", 8), Pair("9", 9)),
+    listOf(Pair("*", 0), Pair("0", 0), Pair("#", 0))
+)
+
+private fun extractCleanDigitsAndPlus(raw: String): String {
+    val len = raw.length
+    val sb = StringBuilder(len)
+    for (i in 0 until len) {
+        val c = raw[i]
+        if (c in '0'..'9' || c == '+') sb.append(c)
+    }
+    return sb.toString()
+}
+
+private fun extractOnlyDigits(raw: String): String {
+    val len = raw.length
+    val sb = StringBuilder(len)
+    for (i in 0 until len) {
+        val c = raw[i]
+        if (c in '0'..'9') sb.append(c)
+    }
+    return sb.toString()
+}
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun DialerScreen(
@@ -92,7 +119,12 @@ fun DialerScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val prefs = remember { PreferencesManager.getInstance(context) }
-    val coroutineScope = rememberCoroutineScope()
+    val vibrator = remember { context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator }
+    val isVibrationEnabled = remember { prefs.isVibrationEnabled() }
+
+    val simCards = remember(context) { SimHelper.getSimCards(context) }
+    val defaultSim = remember(simCards) { simCards.find { it.isDefault } }
+    val hasDefaultSim = remember(defaultSim, simCards) { defaultSim != null || simCards.size <= 1 }
 
     var enteredNumber by remember { mutableStateOf("") }
     var isDialpadOpen by remember { mutableStateOf(false) }
@@ -143,9 +175,13 @@ fun DialerScreen(
     // Fast saved number lookup map
     val savedNumberMap = remember(allContacts) {
         val map = HashMap<String, Contact>()
-        allContacts.forEach { c ->
-            c.numbers.forEach { num ->
-                val clean = num.replace(Regex("[^0-9+]"), "")
+        val count = allContacts.size
+        for (i in 0 until count) {
+            val c = allContacts[i]
+            val nums = c.numbers
+            val numCount = nums.size
+            for (j in 0 until numCount) {
+                val clean = extractCleanDigitsAndPlus(nums[j])
                 if (clean.isNotBlank()) {
                     map[clean] = c
                     if (clean.length >= 10) map[clean.takeLast(10)] = c
@@ -184,8 +220,8 @@ fun DialerScreen(
             // Group by contact identity + callType so all calls of same type to/from same contact consolidate into 1 entry
             val groupMap = LinkedHashMap<String, MutableList<CallLogItem>>()
             for (item in itemsInDay) {
-                val cleanNum = item.number.replace(Regex("[^0-9+]"), "")
-                val digitsOnly = item.number.filter { it.isDigit() }
+                val cleanNum = extractCleanDigitsAndPlus(item.number)
+                val digitsOnly = extractOnlyDigits(item.number)
                 val last10 = if (digitsOnly.length >= 10) digitsOnly.takeLast(10) else digitsOnly
 
                 // Canonical contact matching: Contact ID or last10 digits or cleaned number
@@ -207,8 +243,8 @@ fun DialerScreen(
             groupMap.values.forEach { items ->
                 val sortedItems = items.sortedByDescending { it.timestamp }
                 val first = sortedItems.first()
-                val cleanNum = first.number.replace(Regex("[^0-9+]"), "")
-                val digitsOnly = first.number.filter { it.isDigit() }
+                val cleanNum = extractCleanDigitsAndPlus(first.number)
+                val digitsOnly = extractOnlyDigits(first.number)
                 val last10 = if (digitsOnly.length >= 10) digitsOnly.takeLast(10) else digitsOnly
                 val matchedContact = savedNumberMap[cleanNum] ?: if (last10.isNotBlank()) savedNumberMap[last10] else null
                 val isSaved = matchedContact != null || first.isSavedContact
@@ -243,8 +279,7 @@ fun DialerScreen(
     }
 
     fun handleKeyPress(char: String) {
-        if (prefs.isVibrationEnabled()) {
-            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        if (isVibrationEnabled) {
             vibrator?.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
         }
         enteredNumber += char
@@ -376,7 +411,7 @@ fun DialerScreen(
                                     modifier = Modifier.padding(vertical = 4.dp)
                                 )
                             }
-                            items(matchedContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
+                            items(matchedContacts, key = { it.id }) { contact ->
                                 Card(
                                     shape = RoundedCornerShape(14.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -821,23 +856,8 @@ fun DialerScreen(
                         }
                     }
 
-                    val keys = listOf(
-                        Pair("1", 1),
-                        Pair("2", 2),
-                        Pair("3", 3),
-                        Pair("4", 4),
-                        Pair("5", 5),
-                        Pair("6", 6),
-                        Pair("7", 7),
-                        Pair("8", 8),
-                        Pair("9", 9),
-                        Pair("*", 0),
-                        Pair("0", 0),
-                        Pair("#", 0)
-                    )
-
                     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        keys.chunked(3).forEach { row ->
+                        DIALPAD_ROWS.forEach { row ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -858,11 +878,6 @@ fun DialerScreen(
 
                     Spacer(Modifier.height(8.dp))
 
-                    val context = LocalContext.current
-                    val simCards = remember(context) { SimHelper.getSimCards(context) }
-                    val defaultSim = simCards.find { it.isDefault }
-                    val hasDefaultSim = defaultSim != null && (simCards.size == 1 || PreferencesManager.getInstance(context).getDefaultSim() != -1)
-
                     if (!hasDefaultSim && simCards.size >= 2) {
                         // If default call is not set: 2 call buttons for SIM 1 and SIM 2
                         Row(
@@ -872,7 +887,7 @@ fun DialerScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             val sim1 = simCards[0]
-                            val sim1Text = if (sim1.number.isNotBlank()) "${sim1.carrierName} ${sim1.number}" else sim1.carrierName
+                            val sim1Text = if (sim1.number.isNotBlank()) "${sim1.carrierName} — ${sim1.number}" else sim1.carrierName
 
                             Button(
                                 onClick = {
@@ -901,7 +916,7 @@ fun DialerScreen(
                             }
 
                             val sim2 = simCards[1]
-                            val sim2Text = if (sim2.number.isNotBlank()) "${sim2.carrierName} ${sim2.number}" else sim2.carrierName
+                            val sim2Text = if (sim2.number.isNotBlank()) "${sim2.carrierName} — ${sim2.number}" else sim2.carrierName
 
                             Button(
                                 onClick = {
@@ -937,7 +952,7 @@ fun DialerScreen(
                         val defaultButtonText = buildString {
                             append("SIM $slotNum")
                             if (activeSim?.carrierName?.isNotBlank() == true) {
-                                append(" • ${activeSim.carrierName}")
+                                append(" — ${activeSim.carrierName}")
                             }
                             if (activeNum.isNotBlank()) {
                                 append(" $activeNum")
@@ -951,18 +966,18 @@ fun DialerScreen(
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                            shape = RoundedCornerShape(22.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                             modifier = Modifier
-                                .fillMaxWidth(0.72f)
-                                .height(46.dp)
-                                .shadow(6.dp, RoundedCornerShape(22.dp))
+                                .fillMaxWidth(0.75f)
+                                .height(48.dp)
+                                .shadow(6.dp, RoundedCornerShape(24.dp))
                         ) {
                             Icon(Icons.Default.Call, contentDescription = "Call", tint = Color.White, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text(
                                 text = defaultButtonText,
-                                fontSize = 13.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 maxLines = 1,
