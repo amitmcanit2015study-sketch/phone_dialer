@@ -110,9 +110,9 @@ object CallManager {
     }
 
     private fun updateStateFromCall(call: Call, ctx: Context? = null) {
-        val handle = call.details.handle
+        val handle = call.details?.handle
         val number = handle?.schemeSpecificPart ?: ""
-        var callerName = call.details.callerDisplayName
+        var callerName = call.details?.callerDisplayName
         var photoUri: String? = _callState.value.photoUri
 
         // 1. Check in-memory cached contacts from ContactsRepository for instant match

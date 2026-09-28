@@ -1,6 +1,5 @@
 package com.amitbharat.phonedialer.telecom
 
-import android.app.ActivityOptions
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -169,20 +168,9 @@ class DialerInCallService : InCallService(), SensorEventListener {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
         }
 
-        // On Android 14+ (API 34+), explicitly allow PendingIntent to start activity from background
-        val activityOptions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ActivityOptions.makeBasic().apply {
-                pendingIntentBackgroundActivityStartMode =
-                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-            }.toBundle()
-        } else {
-            null
-        }
-
         val pendingActivityIntent = PendingIntent.getActivity(
             this, 0, activityIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            activityOptions
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         if (isIncoming) {
@@ -202,14 +190,12 @@ class DialerInCallService : InCallService(), SensorEventListener {
             }
             val pendingAnswerIntent = PendingIntent.getActivity(
                 this, 2, answerIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                activityOptions
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
             val pendingFullScreenIntent = PendingIntent.getActivity(
                 this, 10, activityIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                activityOptions
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
             val notification = NotificationCompat.Builder(this, INCOMING_CHANNEL_ID)
@@ -229,7 +215,21 @@ class DialerInCallService : InCallService(), SensorEventListener {
                 .addAction(R.drawable.ic_call, "Answer", pendingAnswerIntent)
                 .build()
 
-            startForeground(NOTIFICATION_ID, notification)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                nm?.notify(NOTIFICATION_ID, notification)
+            }
         } else {
             // Outgoing / Active / Ongoing Call Notification (Making call, In-call, On hold)
             // Use BroadcastReceiver to hang up reliably in background without service permission / background limits
@@ -246,8 +246,7 @@ class DialerInCallService : InCallService(), SensorEventListener {
             }
             val pendingReturnIntent = PendingIntent.getActivity(
                 this, 4, returnIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                activityOptions
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
             val statusText = when {
@@ -270,7 +269,21 @@ class DialerInCallService : InCallService(), SensorEventListener {
                 .addAction(R.drawable.ic_call_end, "End Call", pendingHangupIntent)
                 .build()
 
-            startForeground(NOTIFICATION_ID, notification)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                nm?.notify(NOTIFICATION_ID, notification)
+            }
         }
     }
 

@@ -7,11 +7,14 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -158,10 +161,13 @@ fun ContactDetailsScreen(
         ) {
             // Header Hero Section
             item {
+                val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
                 Card(
                     shape = RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(2.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 2.dp),
+                    border = if (isDark) BorderStroke(1.dp, Color(0xFF282D37).copy(alpha = 0.7f)) else null,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                 ) {
                     Column(
@@ -234,7 +240,12 @@ fun ContactDetailsScreen(
                                         .size(50.dp)
                                         .background(Color(0xFF25D366), CircleShape)
                                 ) {
-                                    Icon(Icons.Default.Share, contentDescription = "WhatsApp", tint = Color.White, modifier = Modifier.size(24.dp))
+                                    Icon(
+                                        painter = painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
+                                        contentDescription = "WhatsApp",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(26.dp)
+                                    )
                                 }
                                 Spacer(Modifier.height(4.dp))
                                 Text("WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)

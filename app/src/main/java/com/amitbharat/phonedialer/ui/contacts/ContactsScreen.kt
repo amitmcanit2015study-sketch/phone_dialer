@@ -2,6 +2,7 @@ package com.amitbharat.phonedialer.ui.contacts
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,6 +11,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import kotlinx.coroutines.launch
 import com.amitbharat.phonedialer.ui.components.AlphabetScroller
+import com.amitbharat.phonedialer.ui.components.ContactActionButtons
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +27,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amitbharat.phonedialer.model.Contact
@@ -152,7 +156,9 @@ fun ContactsScreen(
                     Box(modifier = Modifier.fillMaxSize()) {
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(end = 26.dp),
                             contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
                         ) {
                             items(filteredContacts, key = { it.id.toString() + "_" + it.name }) { contact ->
@@ -337,18 +343,22 @@ fun ContactItemRow(
     onToggleFavorite: () -> Unit,
     onContactClick: () -> Unit
 ) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .clickable { onContactClick() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(14.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 1.5.dp),
+        border = if (isDark) BorderStroke(1.dp, Color(0xFF282D37).copy(alpha = 0.7f)) else null
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ContactAvatar(
@@ -359,64 +369,32 @@ fun ContactItemRow(
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = contact.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text(text = contact.numbers.firstOrNull() ?: "No number", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = contact.name,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = contact.numbers.firstOrNull() ?: "No number",
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            val isWa = com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(contact.id, contact.numbers)
+            Spacer(Modifier.width(6.dp))
             val primaryNum = contact.numbers.firstOrNull() ?: ""
-            val context = LocalContext.current
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Sequence from the last: Call, Message, WhatsApp (Left-to-right: WhatsApp -> Message -> Call)
-                if (isWa && primaryNum.isNotBlank()) {
-                    IconButton(
-                        onClick = {
-                            com.amitbharat.phonedialer.utils.WhatsAppHelper.openWhatsAppChat(context, primaryNum)
-                        },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(Color(0xFFE8F8EE), RoundedCornerShape(8.dp))
-                    ) {
-                        Icon(
-                            painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
-                            contentDescription = "WhatsApp",
-                            tint = Color(0xFF25D366),
-                            modifier = Modifier.size(19.dp)
-                        )
-                    }
-                }
-
-                IconButton(
-                    onClick = onMessageClick,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(Color(0xFFE0F2FE), RoundedCornerShape(8.dp))
-                ) {
-                    Icon(
-                        Icons.Default.Message,
-                        contentDescription = "Message",
-                        tint = Color(0xFF0284C7),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = onCallClick,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(Color(0xFFD1FAE5), RoundedCornerShape(8.dp))
-                ) {
-                    Icon(
-                        Icons.Default.Call,
-                        contentDescription = "Call",
-                        tint = Color(0xFF10B981),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
+            ContactActionButtons(
+                number = primaryNum,
+                contactId = contact.id,
+                contactNumbers = contact.numbers,
+                onMessageClick = onMessageClick,
+                onCallClick = onCallClick
+            )
         }
     }
 }

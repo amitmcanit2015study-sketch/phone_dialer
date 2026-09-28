@@ -7,6 +7,7 @@ import android.os.Vibrator
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,9 +16,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import com.amitbharat.phonedialer.ui.components.ContactActionButtons
 import com.amitbharat.phonedialer.ui.components.simpleScrollbar
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -473,6 +476,7 @@ fun DialerScreen(
                                     val formattedTime = remember(group.latestTimestamp) {
                                         SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(group.latestTimestamp))
                                     }
+                                    val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
                                     Card(
                                         modifier = Modifier
@@ -484,7 +488,8 @@ fun DialerScreen(
                                             },
                                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                         shape = RoundedCornerShape(16.dp),
-                                        elevation = CardDefaults.cardElevation(2.dp)
+                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isDarkTheme) 0.dp else 1.5.dp),
+                                        border = if (isDarkTheme) BorderStroke(1.dp, Color(0xFF282D37).copy(alpha = 0.7f)) else null
                                     ) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -553,59 +558,12 @@ fun DialerScreen(
                                                 }
                                             }
 
-                                            // Action buttons sequence from the last: Call, Message, WhatsApp (Left to Right: WhatsApp -> Message -> Call)
-                                            val isWhatsApp = com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(number = group.number)
-
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                if (isWhatsApp) {
-                                                    IconButton(
-                                                        onClick = {
-                                                            com.amitbharat.phonedialer.utils.WhatsAppHelper.openWhatsAppChat(context, group.number)
-                                                        },
-                                                        modifier = Modifier
-                                                            .size(36.dp)
-                                                            .background(Color(0xFFE8F8EE), RoundedCornerShape(8.dp))
-                                                    ) {
-                                                        Icon(
-                                                            painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
-                                                            contentDescription = "WhatsApp",
-                                                            tint = Color(0xFF25D366),
-                                                            modifier = Modifier.size(19.dp)
-                                                        )
-                                                    }
-                                                }
-
-                                                IconButton(
-                                                    onClick = { onMessageClick(group.number) },
-                                                    modifier = Modifier
-                                                        .size(36.dp)
-                                                        .background(Color(0xFFE0F2FE), RoundedCornerShape(8.dp))
-                                                ) {
-                                                    Icon(
-                                                        Icons.Default.Message,
-                                                        contentDescription = "Message",
-                                                        tint = Color(0xFF0284C7),
-                                                        modifier = Modifier.size(18.dp)
-                                                    )
-                                                }
-
-                                                IconButton(
-                                                    onClick = { onCallClick(group.number, 0) },
-                                                    modifier = Modifier
-                                                        .size(36.dp)
-                                                        .background(Color(0xFFD1FAE5), RoundedCornerShape(8.dp))
-                                                ) {
-                                                    Icon(
-                                                        Icons.Default.Call,
-                                                        contentDescription = "Call",
-                                                        tint = Color(0xFF10B981),
-                                                        modifier = Modifier.size(18.dp)
-                                                    )
-                                                }
-                                            }
+                                            // Action buttons: WhatsApp -> Message -> Call with theme-adaptive styling
+                                            ContactActionButtons(
+                                                number = group.number,
+                                                onMessageClick = { onMessageClick(group.number) },
+                                                onCallClick = { onCallClick(group.number, 0) }
+                                            )
                                         }
                                     }
                                 }
@@ -863,18 +821,18 @@ fun DialerScreen(
                     }
 
                     val keys = listOf(
-                        Triple("1", "", 1),
-                        Triple("2", "ABC", 2),
-                        Triple("3", "DEF", 3),
-                        Triple("4", "GHI", 4),
-                        Triple("5", "JKL", 5),
-                        Triple("6", "MNO", 6),
-                        Triple("7", "PQRS", 7),
-                        Triple("8", "TUV", 8),
-                        Triple("9", "WXYZ", 9),
-                        Triple("*", "", 0),
-                        Triple("0", "+", 0),
-                        Triple("#", "", 0)
+                        Pair("1", 1),
+                        Pair("2", 2),
+                        Pair("3", 3),
+                        Pair("4", 4),
+                        Pair("5", 5),
+                        Pair("6", 6),
+                        Pair("7", 7),
+                        Pair("8", 8),
+                        Pair("9", 9),
+                        Pair("*", 0),
+                        Pair("0", 0),
+                        Pair("#", 0)
                     )
 
                     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -883,10 +841,9 @@ fun DialerScreen(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
-                                row.forEach { (digit, sub, speedIndex) ->
+                                row.forEach { (digit, speedIndex) ->
                                     DialKeyModern(
                                         digit = digit,
-                                        sub = sub,
                                         onClick = { handleKeyPress(digit) },
                                         onLongClick = { if (speedIndex > 0 || digit == "0") handleLongPressDigit(speedIndex) }
                                     )
@@ -924,39 +881,35 @@ fun DialerScreen(
 @Composable
 fun DialKeyModern(
     digit: String,
-    sub: String,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val boxBg = if (isDark) Color(0xFF222631) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    val boxBorder = if (isDark) BorderStroke(1.dp, Color(0xFF313745)) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
     Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        shape = RoundedCornerShape(12.dp),
+        color = boxBg,
+        border = boxBorder,
         modifier = modifier
-            .size(68.dp)
+            .size(66.dp)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier.fillMaxSize()
         ) {
             Text(
                 text = digit,
-                fontSize = 24.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            if (sub.isNotEmpty()) {
-                Text(
-                    text = sub,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }

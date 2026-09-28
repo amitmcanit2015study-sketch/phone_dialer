@@ -7,12 +7,12 @@ import androidx.compose.ui.graphics.Color
 import com.amitbharat.phonedialer.utils.ThemeMode
 
 val PrimaryIndigo = Color(0xFF3B50DF)
-val PrimaryIndigoDark = Color(0xFFBCC2FF)
+val PrimaryIndigoDark = Color(0xFF818CF8)
 val AccentGreen = Color(0xFF22C55E)
 val AccentRed = Color(0xFFEF4444)
-val SurfaceDark = Color(0xFF1A1B1F)
-val BackgroundDark = Color(0xFF111216)
-val SurfaceVariantDark = Color(0xFF25272F)
+val SurfaceDark = Color(0xFF1E222B)
+val BackgroundDark = Color(0xFF11141A)
+val SurfaceVariantDark = Color(0xFF282D37)
 
 private val LightColorScheme = lightColorScheme(
     primary = PrimaryIndigo,
@@ -29,27 +29,27 @@ private val LightColorScheme = lightColorScheme(
 
 private val DarkColorScheme = darkColorScheme(
     primary = PrimaryIndigoDark,
-    onPrimary = Color(0xFF00189B),
-    primaryContainer = Color(0xFF1F35C7),
-    onPrimaryContainer = Color(0xFFDFE0FF),
+    onPrimary = Color(0xFF1E1B4B),
+    primaryContainer = Color(0xFF312E81),
+    onPrimaryContainer = Color(0xFFE0E7FF),
     background = BackgroundDark,
-    onBackground = Color(0xFFE4E1E6),
+    onBackground = Color(0xFFF8FAFC),
     surface = SurfaceDark,
-    onSurface = Color(0xFFE4E1E6),
+    onSurface = Color(0xFFF8FAFC),
     surfaceVariant = SurfaceVariantDark,
-    onSurfaceVariant = Color(0xFFC7C5D0)
+    onSurfaceVariant = Color(0xFF94A3B8)
 )
 
 private val AmoledColorScheme = darkColorScheme(
     primary = PrimaryIndigoDark,
     onPrimary = Color.Black,
-    primaryContainer = Color(0xFF1F35C7),
-    onPrimaryContainer = Color.White,
+    primaryContainer = Color(0xFF1E1B4B),
+    onPrimaryContainer = Color(0xFFE0E7FF),
     background = Color.Black,
     onBackground = Color.White,
-    surface = Color(0xFF0A0A0A),
+    surface = Color(0xFF12141A),
     onSurface = Color.White,
-    surfaceVariant = Color(0xFF18181B),
+    surfaceVariant = Color(0xFF1C2029),
     onSurfaceVariant = Color(0xFFA1A1AA)
 )
 

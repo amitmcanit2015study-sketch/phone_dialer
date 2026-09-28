@@ -56,8 +56,10 @@ class InCallActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setShowWhenLocked(true)
-        setTurnScreenOn(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
         window.addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
             @Suppress("DEPRECATION") WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
@@ -81,7 +83,9 @@ class InCallActivity : ComponentActivity() {
             val callState by CallManager.callState.collectAsState()
 
             LaunchedEffect(callState.hasCall, callState.callState) {
-                if (!callState.hasCall || callState.callState == Call.STATE_DISCONNECTED) {
+                if (!callState.hasCall) {
+                    finish()
+                } else if (callState.callState == Call.STATE_DISCONNECTED) {
                     if (callRecorder.isRecording) {
                         val path = callRecorder.stopRecording()
                         if (path != null) {
@@ -90,7 +94,7 @@ class InCallActivity : ComponentActivity() {
                                     CallLogItem(
                                         number = callState.number,
                                         name = callState.callerName,
-                                        callType = if (callState.callState == Call.STATE_DISCONNECTED) CallType.INCOMING else CallType.OUTGOING,
+                                        callType = if (callState.isIncoming) CallType.INCOMING else CallType.OUTGOING,
                                         timestamp = System.currentTimeMillis(),
                                         duration = callState.callDurationSeconds,
                                         recordingPath = path
@@ -99,6 +103,7 @@ class InCallActivity : ComponentActivity() {
                             }
                         }
                     }
+                    kotlinx.coroutines.delay(1000)
                     finish()
                 } else if (callState.callState == Call.STATE_ACTIVE && prefs.isAutoCallRecordingEnabled() && !callRecorder.isRecording) {
                     val ok = callRecorder.startRecording(callState.number, callState.callerName)
@@ -120,7 +125,7 @@ class InCallActivity : ComponentActivity() {
                                         CallLogItem(
                                             number = callState.number,
                                             name = callState.callerName,
-                                            callType = CallType.OUTGOING,
+                                            callType = if (callState.isIncoming) CallType.INCOMING else CallType.OUTGOING,
                                             timestamp = System.currentTimeMillis(),
                                             duration = callState.callDurationSeconds,
                                             recordingPath = path
@@ -144,7 +149,7 @@ class InCallActivity : ComponentActivity() {
                                         CallLogItem(
                                             number = callState.number,
                                             name = callState.callerName,
-                                            callType = CallType.OUTGOING,
+                                            callType = if (callState.isIncoming) CallType.INCOMING else CallType.OUTGOING,
                                             timestamp = System.currentTimeMillis(),
                                             duration = callState.callDurationSeconds,
                                             recordingPath = path

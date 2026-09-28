@@ -2,12 +2,15 @@ package com.amitbharat.phonedialer.ui.favorites
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.amitbharat.phonedialer.ui.components.ContactActionButtons
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -77,9 +80,13 @@ fun FavoritesScreen(
                 contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp)
             ) {
                 items(favorites, key = { it.id.toString() + "_" + it.name }) { contact ->
+                    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
                     Card(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 1.5.dp),
+                        border = if (isDark) BorderStroke(1.dp, Color(0xFF282D37).copy(alpha = 0.7f)) else null,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
@@ -87,7 +94,7 @@ fun FavoritesScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(12.dp),
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             ContactAvatar(name = contact.name, photoUri = contact.photoUri, size = 52.dp, fontSize = 20.sp)
@@ -105,55 +112,15 @@ fun FavoritesScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            // Sequence from the last: Call, Message, WhatsApp (Left-to-right: WhatsApp -> Message -> Call)
-                            val isWa = com.amitbharat.phonedialer.utils.WhatsAppHelper.isWhatsAppLinked(contact.id, contact.numbers)
                             val num = contact.numbers.firstOrNull() ?: ""
 
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (isWa && num.isNotBlank()) {
-                                    IconButton(
-                                        onClick = {
-                                            com.amitbharat.phonedialer.utils.WhatsAppHelper.openWhatsAppChat(context, num)
-                                        },
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .background(Color(0xFFE8F8EE), RoundedCornerShape(8.dp))
-                                    ) {
-                                        Icon(
-                                            painter = androidx.compose.ui.res.painterResource(id = com.amitbharat.phonedialer.R.drawable.ic_whatsapp),
-                                            contentDescription = "WhatsApp",
-                                            tint = Color(0xFF25D366),
-                                            modifier = Modifier.size(19.dp)
-                                        )
-                                    }
-                                }
-
-                                IconButton(
-                                    onClick = { onMessageClick(num) },
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(Color(0xFFE0F2FE), RoundedCornerShape(8.dp))
-                                ) {
-                                    Icon(
-                                        Icons.Default.Message,
-                                        contentDescription = "Message",
-                                        tint = Color(0xFF0284C7),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { onCallClick(num) },
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(Color(0xFFD1FAE5), RoundedCornerShape(8.dp))
-                                ) {
-                                    Icon(Icons.Default.Call, contentDescription = "Call", tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-                                }
-                            }
+                            ContactActionButtons(
+                                number = num,
+                                contactId = contact.id,
+                                contactNumbers = contact.numbers,
+                                onMessageClick = { onMessageClick(num) },
+                                onCallClick = { onCallClick(num) }
+                            )
                         }
                     }
                 }

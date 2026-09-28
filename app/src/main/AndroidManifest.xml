@@ -81,7 +81,7 @@
         <!-- In-Call Full Screen Activity (Lockscreen overlay) -->
         <activity
             android:name=".ui.incall.InCallActivity"
-            android:exported="false"
+            android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout"
             android:launchMode="singleTask"
             android:taskAffinity="com.amitbharat.phonedialer.incall"
