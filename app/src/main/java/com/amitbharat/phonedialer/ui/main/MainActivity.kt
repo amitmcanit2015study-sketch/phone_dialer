@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onThemeChange = { mode -> themeMode = mode },
                     onLoadMoreCallLogs = {
-                        lifecycleScope.launch { callLogRepo.loadMoreCallLogs(60) }
+                        lifecycleScope.launch { callLogRepo.loadMoreCallLogs(15) }
                     }
                 )
             }

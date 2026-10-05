@@ -135,6 +135,46 @@ class PreferencesManager private constructor(context: Context) {
         prefs.edit().putStringSet("sms_quick_responses", responses.toSet()).apply()
     }
 
+    fun getArchivedFavoriteKeys(): Set<String> {
+        return prefs.getStringSet("archived_favorite_keys", emptySet()) ?: emptySet()
+    }
+
+    fun archiveFavorite(contactKey: String) {
+        val current = getArchivedFavoriteKeys().toMutableSet()
+        current.add(contactKey)
+        prefs.edit().putStringSet("archived_favorite_keys", current).apply()
+    }
+
+    fun unarchiveFavorite(contactKey: String) {
+        val current = getArchivedFavoriteKeys().toMutableSet()
+        current.remove(contactKey)
+        prefs.edit().putStringSet("archived_favorite_keys", current).apply()
+    }
+
+    fun isFavoriteArchived(contactKey: String): Boolean {
+        return getArchivedFavoriteKeys().contains(contactKey)
+    }
+
+    fun getArchivedMessageThreadKeys(): Set<String> {
+        return prefs.getStringSet("archived_message_thread_keys", emptySet()) ?: emptySet()
+    }
+
+    fun archiveMessageThread(threadKey: String) {
+        val current = getArchivedMessageThreadKeys().toMutableSet()
+        current.add(threadKey)
+        prefs.edit().putStringSet("archived_message_thread_keys", current).apply()
+    }
+
+    fun unarchiveMessageThread(threadKey: String) {
+        val current = getArchivedMessageThreadKeys().toMutableSet()
+        current.remove(threadKey)
+        prefs.edit().putStringSet("archived_message_thread_keys", current).apply()
+    }
+
+    fun isMessageThreadArchived(threadKey: String): Boolean {
+        return getArchivedMessageThreadKeys().contains(threadKey)
+    }
+
     companion object {
         @Volatile
         private var instance: PreferencesManager? = null

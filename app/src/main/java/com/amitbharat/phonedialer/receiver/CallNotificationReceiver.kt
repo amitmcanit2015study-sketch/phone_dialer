@@ -18,6 +18,14 @@ class CallNotificationReceiver : BroadcastReceiver() {
             DialerInCallService.ACTION_ANSWER -> {
                 CallManager.answerCall()
             }
+            DialerInCallService.ACTION_SPEAKER -> {
+                val current = CallManager.callState.value.isSpeakerOn
+                CallManager.setSpeakerphoneOn(!current)
+            }
+            DialerInCallService.ACTION_MUTE -> {
+                val current = CallManager.callState.value.isMuted
+                CallManager.setMuted(!current)
+            }
         }
     }
 }

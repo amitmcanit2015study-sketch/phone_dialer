@@ -34,7 +34,7 @@ class CallLogRepository(private val context: Context) {
         @Volatile
         private var lastRecordingsScanTime: Long = 0L
         @Volatile
-        var currentFetchLimit: Int = 60
+        var currentDaysLimit: Int = 15
 
         private val _callLogsFlow = kotlinx.coroutines.flow.MutableStateFlow<List<CallLogItem>>(emptyList())
 
@@ -92,9 +92,8 @@ class CallLogRepository(private val context: Context) {
         if (!forceRefresh && cached != null && (now - lastLogFetchTime < 30_000)) {
             emit(cached)
         } else {
-            // Lazy Loading: Only load the most recent calls (default 60) for instant startup.
-            // Do NOT load complete historical call logs on app startup!
-            val recentLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = null, maxCount = currentFetchLimit))
+            // By default, query only the last 15 days for speed and memory efficiency
+            val recentLogs = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = currentDaysLimit))
             cachedCallLogs = recentLogs
             lastLogFetchTime = now
             _callLogsFlow.value = recentLogs
@@ -108,9 +107,9 @@ class CallLogRepository(private val context: Context) {
         }
     }.flowOn(Dispatchers.IO)
 
-    suspend fun loadMoreCallLogs(batchSize: Int = 60): List<CallLogItem> = withContext(Dispatchers.IO) {
-        currentFetchLimit += batchSize
-        val updated = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = null, maxCount = currentFetchLimit))
+    suspend fun loadMoreCallLogs(batchDays: Int = 15): List<CallLogItem> = withContext(Dispatchers.IO) {
+        currentDaysLimit += batchDays
+        val updated = deduplicateLogs(fetchDeviceCallLogsDirectly(daysLimit = currentDaysLimit))
         cachedCallLogs = updated
         lastLogFetchTime = System.currentTimeMillis()
         _callLogsFlow.value = updated
@@ -139,7 +138,7 @@ class CallLogRepository(private val context: Context) {
         callLogDao.clearCallLogs()
     }
 
-    fun fetchDeviceCallLogsDirectly(daysLimit: Int? = null, maxCount: Int? = null): List<CallLogItem> {
+    fun fetchDeviceCallLogsDirectly(daysLimit: Int? = currentDaysLimit, maxCount: Int? = null): List<CallLogItem> {
         val result = mutableListOf<CallLogItem>()
         try {
             // Build saved contact number sets for O(1) instant lookup
@@ -156,7 +155,8 @@ class CallLogRepository(private val context: Context) {
                 Pair(null, null)
             }
 
-            val sortOrder = if (maxCount != null) "${CallLog.Calls.DATE} DESC LIMIT $maxCount" else "${CallLog.Calls.DATE} DESC"
+            // Always use safe sort order without LIMIT keyword (LIMIT in sortOrder causes crashes on Android 10+)
+            val sortOrder = "${CallLog.Calls.DATE} DESC"
 
             val cursor = resolver.query(
                 CallLog.Calls.CONTENT_URI,
@@ -182,6 +182,9 @@ class CallLogRepository(private val context: Context) {
                 val durIdx = it.getColumnIndex(CallLog.Calls.DURATION)
 
                 while (it.moveToNext()) {
+                    if (maxCount != null && result.size >= maxCount) {
+                        break
+                    }
                     val id = if (idIdx >= 0) it.getLong(idIdx) else 0L
                     val number = if (numIdx >= 0) it.getString(numIdx) ?: "" else ""
                     val name = if (nameIdx >= 0) it.getString(nameIdx) else null

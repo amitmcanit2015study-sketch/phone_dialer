@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import com.amitbharat.phonedialer.model.Contact
 import com.amitbharat.phonedialer.ui.theme.AccentGreen
 import com.amitbharat.phonedialer.utils.ContactAvatar
+import com.amitbharat.phonedialer.utils.PreferencesManager
+import androidx.compose.ui.text.style.TextAlign
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -75,10 +77,17 @@ fun MessagesScreen(
     onCallClick: (String) -> Unit,
     onOpenThread: ((MessageThread) -> Unit)? = null,
     onSearchActive: (Boolean) -> Unit = {},
+    scrollToTopTrigger: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
+
+    LaunchedEffect(scrollToTopTrigger) {
+        if (scrollToTopTrigger > 0) {
+            listState.animateScrollToItem(0)
+        }
+    }
     var searchQuery by remember { mutableStateOf("") }
     var isSearchOpen by remember { mutableStateOf(false) }
     var selectedThread by remember { mutableStateOf<MessageThread?>(null) }
@@ -147,6 +156,18 @@ fun MessagesScreen(
         }
     }
 
+    val prefs = remember { PreferencesManager.getInstance(context) }
+    var archivedThreadKeys by remember { mutableStateOf(prefs.getArchivedMessageThreadKeys()) }
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: All Messages, 1: Archived
+
+    val unarchivedThreads = remember(filteredThreads, archivedThreadKeys) {
+        filteredThreads.filter { !archivedThreadKeys.contains(it.normalizedNumber) && !archivedThreadKeys.contains(it.displayAddress) }
+    }
+    val archivedThreads = remember(filteredThreads, archivedThreadKeys) {
+        filteredThreads.filter { archivedThreadKeys.contains(it.normalizedNumber) || archivedThreadKeys.contains(it.displayAddress) }
+    }
+    val activeThreads = if (selectedTab == 0) unarchivedThreads else archivedThreads
+
     if (showNewComposer) {
         NewMessageComposerScreen(
             contacts = contacts,
@@ -178,7 +199,10 @@ fun MessagesScreen(
         ChatThreadScreen(
             thread = selectedThread!!,
             contacts = contacts,
-            onBack = { selectedThread = null },
+            onBack = {
+                selectedThread = null
+                archivedThreadKeys = prefs.getArchivedMessageThreadKeys()
+            },
             onCallClick = { onCallClick(selectedThread!!.displayAddress) }
         )
     } else {
@@ -191,27 +215,72 @@ fun MessagesScreen(
 
                 // Standard Header (When search is inactive)
                 if (!isSearchOpen) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = MaterialTheme.colorScheme.background,
+                        divider = {}
                     ) {
-                        Text(
-                            text = "Messages (${threads.size})",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.primary
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            text = {
+                                Text(
+                                    "Messages (${unarchivedThreads.size})",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        )
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.Archive,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "Archived (${archivedThreads.size})",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         )
                     }
+                    Spacer(Modifier.height(4.dp))
                 }
 
-                if (filteredThreads.isEmpty()) {
+                if (activeThreads.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Message, contentDescription = null, modifier = Modifier.size(54.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                            Icon(
+                                if (selectedTab == 1) Icons.Default.Archive else Icons.Default.Message,
+                                contentDescription = null,
+                                modifier = Modifier.size(54.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
                             Spacer(Modifier.height(8.dp))
-                            Text("No messages found", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (selectedTab == 1) "No archived messages" else "No messages found",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (selectedTab == 1) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Archive important conversations using the archive button on any message to keep them saved here.",
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
                     }
                 } else {
@@ -220,7 +289,7 @@ fun MessagesScreen(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp).simpleScrollbar(listState),
                         contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
                     ) {
-                        items(filteredThreads, key = { it.normalizedNumber }) { thread ->
+                        items(activeThreads, key = { it.normalizedNumber }) { thread ->
                             val formattedTime = remember(thread.latestTimestamp) {
                                 val diff = System.currentTimeMillis() - thread.latestTimestamp
                                 if (diff < 24 * 60 * 60 * 1000) {
@@ -319,9 +388,32 @@ fun MessagesScreen(
                                             )
                                         }
                                     }
+                                    // Archive / Unarchive button
+                                    IconButton(
+                                        onClick = {
+                                            if (selectedTab == 0) {
+                                                prefs.archiveMessageThread(thread.normalizedNumber)
+                                                archivedThreadKeys = prefs.getArchivedMessageThreadKeys()
+                                                Toast.makeText(context, "Thread archived", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                prefs.unarchiveMessageThread(thread.normalizedNumber)
+                                                archivedThreadKeys = prefs.getArchivedMessageThreadKeys()
+                                                Toast.makeText(context, "Thread unarchived", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (selectedTab == 0) Icons.Default.Archive else Icons.Default.Unarchive,
+                                            contentDescription = if (selectedTab == 0) "Archive conversation" else "Unarchive conversation",
+                                            tint = if (selectedTab == 0) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f) else MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    }
+
                                     // Vertical red line on right side for unread messages (Req 3)
                                     if (thread.unreadCount > 0) {
-                                        Spacer(Modifier.width(10.dp))
+                                        Spacer(Modifier.width(6.dp))
                                         Box(
                                             modifier = Modifier
                                                 .width(4.dp)
@@ -943,6 +1035,27 @@ fun ChatThreadScreen(
                     }
                 },
                 actions = {
+                    val prefs = remember { PreferencesManager.getInstance(context) }
+                    var isArchived by remember(thread.normalizedNumber) {
+                        mutableStateOf(prefs.isMessageThreadArchived(thread.normalizedNumber))
+                    }
+                    IconButton(onClick = {
+                        if (isArchived) {
+                            prefs.unarchiveMessageThread(thread.normalizedNumber)
+                            isArchived = false
+                            Toast.makeText(context, "Thread unarchived", Toast.LENGTH_SHORT).show()
+                        } else {
+                            prefs.archiveMessageThread(thread.normalizedNumber)
+                            isArchived = true
+                            Toast.makeText(context, "Thread archived", Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                            contentDescription = if (isArchived) "Unarchive" else "Archive",
+                            tint = if (isArchived) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = onCallClick) {
                         Icon(Icons.Default.Call, contentDescription = "Call", tint = AccentGreen)
                     }

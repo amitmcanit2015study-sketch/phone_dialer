@@ -1,5 +1,6 @@
 package com.amitbharat.phonedialer.ui.incall
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -29,9 +30,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
@@ -82,10 +85,10 @@ class InCallActivity : ComponentActivity() {
         setContent {
             val callState by CallManager.callState.collectAsState()
 
-            LaunchedEffect(callState.hasCall, callState.callState) {
+            LaunchedEffect(callState.hasCall, callState.callState, callState.hasSecondaryCall) {
                 if (!callState.hasCall) {
                     finish()
-                } else if (callState.callState == Call.STATE_DISCONNECTED) {
+                } else if (callState.callState == Call.STATE_DISCONNECTED && !callState.hasSecondaryCall) {
                     if (callRecorder.isRecording) {
                         val path = callRecorder.stopRecording()
                         if (path != null) {
@@ -139,6 +142,13 @@ class InCallActivity : ComponentActivity() {
                     onMuteToggle = { CallManager.setMuted(!callState.isMuted) },
                     onSpeakerToggle = { CallManager.setSpeakerphoneOn(!callState.isSpeakerOn) },
                     onHoldToggle = { CallManager.toggleHold() },
+                    onSwapCalls = { CallManager.swapCalls() },
+                    onMergeCalls = { CallManager.mergeCalls() },
+                    onAddCall = { number -> CallManager.addNewCall(this@InCallActivity, number) },
+                    onDisconnectSecondary = { CallManager.disconnectSecondaryCall() },
+                    onAnswerWaitingHold = { CallManager.answerCallWaitingAndHold() },
+                    onAnswerWaitingEndCurrent = { CallManager.answerCallWaitingAndEndCurrent() },
+                    onRejectWaiting = { CallManager.rejectCallWaiting() },
                     onRecordToggle = {
                         if (callRecorder.isRecording) {
                             val path = callRecorder.stopRecording()
@@ -207,16 +217,26 @@ fun InCallScreen(
     onMuteToggle: () -> Unit,
     onSpeakerToggle: () -> Unit,
     onHoldToggle: () -> Unit,
+    onSwapCalls: () -> Unit,
+    onMergeCalls: () -> Unit,
+    onAddCall: (String) -> Unit,
+    onDisconnectSecondary: () -> Unit,
+    onAnswerWaitingHold: () -> Unit,
+    onAnswerWaitingEndCurrent: () -> Unit,
+    onRejectWaiting: () -> Unit,
     onRecordToggle: () -> Unit,
     onDtmf: (Char) -> Unit,
     onSendQuickSms: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val isIncomingRinging = state.callState == Call.STATE_RINGING
     var isKeypadOpen by remember { mutableStateOf(false) }
     var dialedDtmfDigits by remember { mutableStateOf("") }
     var isQuickSmsOpen by remember { mutableStateOf(false) }
     var customSmsText by remember { mutableStateOf("") }
+    var isAddCallSheetOpen by remember { mutableStateOf(false) }
+    var addCallNumber by remember { mutableStateOf("") }
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
@@ -235,16 +255,17 @@ fun InCallScreen(
         String.format("%02d:%02d", mins, secs)
     }
 
-    val stateText = when (state.callState) {
-        Call.STATE_RINGING -> "INCOMING CALL…"
-        Call.STATE_DIALING, Call.STATE_CONNECTING -> "Calling…"
-        Call.STATE_ACTIVE -> durationText
-        Call.STATE_HOLDING -> "On Hold"
-        Call.STATE_DISCONNECTED -> "Call Ended"
+    val stateText = when {
+        state.isConference -> "Conference Call • $durationText"
+        state.callState == Call.STATE_RINGING -> "INCOMING CALL…"
+        state.callState == Call.STATE_DIALING || state.callState == Call.STATE_CONNECTING -> "Calling…"
+        state.callState == Call.STATE_HOLDING -> "Call on Hold"
+        state.callState == Call.STATE_ACTIVE -> durationText
+        state.callState == Call.STATE_DISCONNECTED -> "Call Ended"
         else -> "Calling…"
     }
 
-    val displayName = state.callerName ?: state.number
+    val displayName = if (state.isConference) "Conference Call" else (state.callerName ?: state.number)
 
     Box(
         modifier = Modifier
@@ -265,22 +286,95 @@ fun InCallScreen(
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(28.dp))
+
+            // Secondary Call Card (when 2 calls exist, e.g. Call on Hold)
+            if (state.hasSecondaryCall && !state.hasCallWaiting) {
+                val secDurationMins = state.secondaryDurationSeconds / 60
+                val secDurationSecs = state.secondaryDurationSeconds % 60
+                val secDurationText = String.format("%02d:%02d", secDurationMins, secDurationSecs)
+                val secStatus = if (state.secondaryIsHeld) "On Hold • $secDurationText" else "Active • $secDurationText"
+
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color(0xFF1E293B).copy(alpha = 0.95f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.45f)),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                        .clickable { onSwapCalls() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ContactAvatar(
+                            name = state.secondaryCallerName ?: state.secondaryNumber,
+                            photoUri = state.secondaryPhotoUri,
+                            size = 38.dp,
+                            fontSize = 15.sp
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = state.secondaryCallerName ?: state.secondaryNumber,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = secStatus,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (state.secondaryIsHeld) Color(0xFFF59E0B) else AccentGreen
+                            )
+                        }
+
+                        // Swap Button
+                        Button(
+                            onClick = onSwapCalls,
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8).copy(alpha = 0.25f)),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Icon(Icons.Default.SwapCalls, contentDescription = "Swap", tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Swap", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(Modifier.width(6.dp))
+
+                        // Disconnect Secondary Button
+                        IconButton(
+                            onClick = onDisconnectSecondary,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .background(AccentRed.copy(alpha = 0.25f), CircleShape)
+                        ) {
+                            Icon(Icons.Default.CallEnd, contentDescription = "End Call", tint = AccentRed, modifier = Modifier.size(15.dp))
+                        }
+                    }
+                }
+            }
 
             // SIM / Carrier Status Badge
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xFF1E293B).copy(alpha = 0.85f),
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 12.dp)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Default.SignalCellularAlt, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Jio 5G • HD Voice Call",
+                        text = if (state.isConference) "Conference • HD Audio" else "HD Voice Call",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White.copy(alpha = 0.9f)
@@ -291,57 +385,76 @@ fun InCallScreen(
             // Caller Name & Phone Number
             Text(
                 text = displayName,
-                fontSize = 32.sp,
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 textAlign = TextAlign.Center,
                 maxLines = 2
             )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = state.number,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.8f)
-            )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(4.dp))
+            if (!state.isConference) {
+                Text(
+                    text = state.number,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.8f)
+                )
+            } else {
+                Text(
+                    text = "${state.conferenceParticipantsCount} participants connected",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFA78BFA)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
 
             // Animated Status Pill
             Surface(
                 shape = RoundedCornerShape(14.dp),
-                color = if (isIncomingRinging) AccentGreen.copy(alpha = 0.25f) else Color(0xFF38BDF8).copy(alpha = 0.25f)
+                color = when {
+                    state.isHeld -> Color(0xFFF59E0B).copy(alpha = 0.25f)
+                    isIncomingRinging -> AccentGreen.copy(alpha = 0.25f)
+                    state.isConference -> Color(0xFF8B5CF6).copy(alpha = 0.25f)
+                    else -> Color(0xFF38BDF8).copy(alpha = 0.25f)
+                }
             ) {
                 Text(
                     text = stateText,
-                    fontSize = 18.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isIncomingRinging) AccentGreen else Color(0xFF38BDF8),
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+                    color = when {
+                        state.isHeld -> Color(0xFFF59E0B)
+                        isIncomingRinging -> AccentGreen
+                        state.isConference -> Color(0xFFA78BFA)
+                        else -> Color(0xFF38BDF8)
+                    },
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
                 )
             }
 
             // Recording Indicator
             if (state.isRecording) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
                         .background(AccentRed.copy(alpha = 0.35f))
-                        .padding(horizontal = 14.dp, vertical = 5.dp),
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.FiberManualRecord, contentDescription = null, tint = AccentRed, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Recording Call…", color = AccentRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.FiberManualRecord, contentDescription = null, tint = AccentRed, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Recording Call…", color = AccentRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
-            // Square Contact Image starting from below recording pill down to controls menu (Req 4)
+            // Contact Avatar Image
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
@@ -365,71 +478,71 @@ fun InCallScreen(
                 }
             }
 
-            // Action Control Panel (Item 12: Incoming Call Screen UI)
-            if (isIncomingRinging) {
+            // Action Control Panel
+            if (isIncomingRinging && !state.hasSecondaryCall) {
+                // Initial Incoming Call Screen UI
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Quick Message Pill
                     OutlinedButton(
                         onClick = { isQuickSmsOpen = true },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                         shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier.padding(bottom = 28.dp)
+                        modifier = Modifier.padding(bottom = 24.dp)
                     ) {
-                        Icon(Icons.Default.Message, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Filled.Message, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Quick SMS Response", fontWeight = FontWeight.SemiBold)
                     }
 
-                    // Large Answer / Decline Buttons with Glow
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Decline Button (Crimson Red)
+                        // Decline Button
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             IconButton(
                                 onClick = onReject,
                                 modifier = Modifier
-                                    .size(80.dp)
+                                    .size(76.dp)
                                     .background(AccentRed, CircleShape)
                             ) {
-                                Icon(Icons.Default.CallEnd, contentDescription = "Decline", tint = Color.White, modifier = Modifier.size(40.dp))
+                                Icon(Icons.Default.CallEnd, contentDescription = "Decline", tint = Color.White, modifier = Modifier.size(38.dp))
                             }
-                            Spacer(Modifier.height(10.dp))
-                            Text("Decline", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Decline", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         }
 
-                        // Answer Button (Emerald Green with Pulse)
+                        // Answer Button
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             IconButton(
                                 onClick = onAnswer,
                                 modifier = Modifier
                                     .scale(pulseScale)
-                                    .size(80.dp)
+                                    .size(76.dp)
                                     .background(AccentGreen, CircleShape)
                             ) {
-                                Icon(Icons.Default.Call, contentDescription = "Answer", tint = Color.White, modifier = Modifier.size(40.dp))
+                                Icon(Icons.Default.Call, contentDescription = "Answer", tint = Color.White, modifier = Modifier.size(38.dp))
                             }
-                            Spacer(Modifier.height(10.dp))
-                            Text("Answer", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Answer", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             } else {
-                // Active / Outgoing Call Controls
+                // Active / Multi-Call Controls
                 Card(
                     shape = RoundedCornerShape(28.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.95f)),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(vertical = 18.dp, horizontal = 12.dp),
+                        modifier = Modifier.padding(vertical = 16.dp, horizontal = 10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        // Row 1: Keypad, Mute, Speaker, Add Call
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly
@@ -447,24 +560,47 @@ fun InCallScreen(
                                 onClick = onMuteToggle
                             )
                             InCallBtn(
-                                icon = Icons.Default.VolumeUp,
+                                icon = Icons.AutoMirrored.Filled.VolumeUp,
                                 label = "Speaker",
                                 isActive = state.isSpeakerOn,
                                 onClick = onSpeakerToggle
                             )
+                            InCallBtn(
+                                icon = Icons.Default.Add,
+                                label = "Add Call",
+                                isActive = isAddCallSheetOpen,
+                                onClick = { isAddCallSheetOpen = true },
+                                isEnabled = state.canAddCall
+                            )
                         }
 
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(14.dp))
 
+                        // Row 2: Hold, Swap, Merge, Record
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
                             InCallBtn(
-                                icon = Icons.Default.Pause,
-                                label = "Hold",
+                                icon = if (state.isHeld) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                label = if (state.isHeld) "Resume" else "Hold",
                                 isActive = state.isHeld,
-                                onClick = onHoldToggle
+                                onClick = onHoldToggle,
+                                isEnabled = state.canHold
+                            )
+                            InCallBtn(
+                                icon = Icons.Default.SwapCalls,
+                                label = "Swap",
+                                isActive = false,
+                                onClick = onSwapCalls,
+                                isEnabled = state.canSwap
+                            )
+                            InCallBtn(
+                                icon = Icons.AutoMirrored.Filled.CallMerge,
+                                label = "Merge",
+                                isActive = false,
+                                onClick = onMergeCalls,
+                                isEnabled = state.canMerge
                             )
                             InCallBtn(
                                 icon = Icons.Default.FiberManualRecord,
@@ -472,15 +608,9 @@ fun InCallScreen(
                                 isActive = state.isRecording,
                                 onClick = onRecordToggle
                             )
-                            InCallBtn(
-                                icon = Icons.Default.Sms,
-                                label = "Quick SMS",
-                                isActive = isQuickSmsOpen,
-                                onClick = { isQuickSmsOpen = true }
-                            )
                         }
 
-                        Spacer(Modifier.height(20.dp))
+                        Spacer(Modifier.height(18.dp))
 
                         Button(
                             onClick = onEndCall,
@@ -488,12 +618,227 @@ fun InCallScreen(
                             shape = RoundedCornerShape(32.dp),
                             modifier = Modifier
                                 .fillMaxWidth(0.85f)
-                                .height(60.dp)
+                                .height(56.dp)
                         ) {
-                            Icon(Icons.Default.CallEnd, contentDescription = "End Call", tint = Color.White, modifier = Modifier.size(30.dp))
+                            Icon(Icons.Default.CallEnd, contentDescription = "End Call", tint = Color.White, modifier = Modifier.size(28.dp))
                             Spacer(Modifier.width(10.dp))
                             Text("END CALL", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                         }
+                    }
+                }
+            }
+        }
+
+        // Call Waiting Overlay (when 2nd call rings during active call)
+        if (state.hasCallWaiting) {
+            Surface(
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = Color(0xFF0F172A),
+                shadowElevation = 24.dp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = AccentGreen.copy(alpha = 0.25f),
+                            modifier = Modifier.padding(end = 10.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.PhoneCallback, contentDescription = null, tint = AccentGreen, modifier = Modifier.padding(6.dp).size(22.dp))
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("INCOMING CALL WAITING", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentGreen)
+                            Text(
+                                text = state.callWaitingName ?: state.callWaitingNumber,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (state.callWaitingName != null && state.callWaitingNumber.isNotBlank()) {
+                                Text(state.callWaitingNumber, fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f))
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Decline
+                        Button(
+                            onClick = onRejectWaiting,
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Default.CallEnd, contentDescription = "Decline", tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Decline", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        // End Current & Answer
+                        OutlinedButton(
+                            onClick = onAnswerWaitingEndCurrent,
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFF59E0B)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            Text("End & Answer", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        // Hold Current & Answer
+                        Button(
+                            onClick = onAnswerWaitingHold,
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                        ) {
+                            Icon(Icons.Default.Call, contentDescription = "Answer", tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Hold & Answer", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add Call Dialog / Sheet
+        AnimatedVisibility(
+            visible = isAddCallSheetOpen,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Card(
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                elevation = CardDefaults.cardElevation(24.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .navigationBarsPadding()
+                        .padding(18.dp)
+                        .padding(bottom = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Add Call", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        IconButton(onClick = { isAddCallSheetOpen = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Number input display with Paste & Backspace
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF1E293B),
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Paste button
+                            IconButton(
+                                onClick = {
+                                    val clip = clipboardManager.getText()?.text?.trim()
+                                    if (!clip.isNullOrBlank()) {
+                                        val digitsOnly = StringBuilder()
+                                        for (c in clip) {
+                                            if (c in '0'..'9' || c == '+' || c == '*' || c == '#') digitsOnly.append(c)
+                                        }
+                                        val dialable = digitsOnly.toString()
+                                        if (dialable.isNotBlank()) {
+                                            addCallNumber = dialable
+                                            Toast.makeText(context, "Pasted: $dialable", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.ContentPaste, contentDescription = "Paste", tint = Color(0xFF38BDF8))
+                            }
+
+                            Text(
+                                text = if (addCallNumber.isEmpty()) "Enter or paste number…" else addCallNumber,
+                                fontSize = if (addCallNumber.isEmpty()) 15.sp else 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (addCallNumber.isEmpty()) Color.Gray else Color.White,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            if (addCallNumber.isNotEmpty()) {
+                                IconButton(onClick = { addCallNumber = addCallNumber.dropLast(1) }) {
+                                    Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete", tint = Color.Gray)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Compact Dialpad
+                    val dialpadKeys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#")
+                    dialpadKeys.chunked(3).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            row.forEach { digit ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(68.dp, 48.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF1E293B))
+                                        .clickable { addCallNumber += digit },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(digit, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    // Call Button
+                    Button(
+                        onClick = {
+                            if (addCallNumber.isNotBlank()) {
+                                onAddCall(addCallNumber)
+                                isAddCallSheetOpen = false
+                                addCallNumber = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth(0.75f).height(50.dp)
+                    ) {
+                        Icon(Icons.Default.Call, contentDescription = "Call", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("CALL", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                     }
                 }
             }
@@ -676,26 +1021,37 @@ fun InCallBtn(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     isActive: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isEnabled: Boolean = true
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(
             onClick = onClick,
+            enabled = isEnabled,
             modifier = Modifier
-                .size(56.dp)
+                .size(54.dp)
                 .background(
-                    if (isActive) Color.White else Color(0xFF1E293B),
+                    if (!isEnabled) Color(0xFF1E293B).copy(alpha = 0.4f)
+                    else if (isActive) Color.White
+                    else Color(0xFF1E293B),
                     CircleShape
                 )
         ) {
             Icon(
                 icon,
                 contentDescription = label,
-                tint = if (isActive) Color.Black else Color.White,
-                modifier = Modifier.size(26.dp)
+                tint = if (!isEnabled) Color.Gray.copy(alpha = 0.5f)
+                       else if (isActive) Color.Black
+                       else Color.White,
+                modifier = Modifier.size(24.dp)
             )
         }
-        Spacer(Modifier.height(6.dp))
-        Text(text = label, fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(5.dp))
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = if (!isEnabled) Color.Gray.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.85f),
+            fontWeight = FontWeight.Medium
+        )
     }
 }

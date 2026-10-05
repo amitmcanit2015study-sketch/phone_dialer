@@ -67,6 +67,11 @@ fun MainScreen(
     var activeChatThread by remember { mutableStateOf<com.amitbharat.phonedialer.ui.messages.MessageThread?>(null) }
     var isSearchActive by remember { mutableStateOf(false) }
 
+    var dialerScrollToTopTrigger by remember { mutableIntStateOf(0) }
+    var contactsScrollToTopTrigger by remember { mutableIntStateOf(0) }
+    var messagesScrollToTopTrigger by remember { mutableIntStateOf(0) }
+    var favoritesScrollToTopTrigger by remember { mutableIntStateOf(0) }
+
     LaunchedEffect(initialTab) {
         if (initialTab != MainTab.DIALER) {
             currentTab = initialTab
@@ -248,34 +253,90 @@ fun MainScreen(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (!isSearchActive && !WindowInsets.isImeVisible) {
+                    val navItemColors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         // 1. Dialer
                         NavigationBarItem(
                             selected = currentTab == MainTab.DIALER,
-                            onClick = { navigateToTab(MainTab.DIALER) },
+                            onClick = {
+                                if (currentTab != MainTab.DIALER) {
+                                    navigateToTab(MainTab.DIALER)
+                                }
+                                dialerScrollToTopTrigger++
+                            },
                             icon = { Icon(Icons.Default.Call, contentDescription = "Dialer") },
-                            label = { Text("Dialer", fontSize = 12.sp) }
+                            label = {
+                                Text(
+                                    "Dialer",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (currentTab == MainTab.DIALER) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = navItemColors
                         )
                         // 2. Contacts
                         NavigationBarItem(
                             selected = currentTab == MainTab.CONTACTS,
-                            onClick = { navigateToTab(MainTab.CONTACTS) },
+                            onClick = {
+                                if (currentTab != MainTab.CONTACTS) {
+                                    navigateToTab(MainTab.CONTACTS)
+                                }
+                                contactsScrollToTopTrigger++
+                            },
                             icon = { Icon(Icons.Default.People, contentDescription = "Contacts") },
-                            label = { Text("Contacts", fontSize = 12.sp) }
+                            label = {
+                                Text(
+                                    "Contacts",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (currentTab == MainTab.CONTACTS) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = navItemColors
                         )
                         // 3. Messages
                         NavigationBarItem(
                             selected = currentTab == MainTab.MESSAGES,
-                            onClick = { navigateToTab(MainTab.MESSAGES) },
+                            onClick = {
+                                if (currentTab != MainTab.MESSAGES) {
+                                    navigateToTab(MainTab.MESSAGES)
+                                }
+                                messagesScrollToTopTrigger++
+                            },
                             icon = { Icon(Icons.Default.Message, contentDescription = "Messages") },
-                            label = { Text("Messages", fontSize = 12.sp) }
+                            label = {
+                                Text(
+                                    "Messages",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (currentTab == MainTab.MESSAGES) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = navItemColors
                         )
                         // 4. Favorites
                         NavigationBarItem(
                             selected = currentTab == MainTab.FAVORITES,
-                            onClick = { navigateToTab(MainTab.FAVORITES) },
+                            onClick = {
+                                if (currentTab != MainTab.FAVORITES) {
+                                    navigateToTab(MainTab.FAVORITES)
+                                }
+                                favoritesScrollToTopTrigger++
+                            },
                             icon = { Icon(Icons.Default.Star, contentDescription = "Favorites") },
-                            label = { Text("Favorites", fontSize = 12.sp) }
+                            label = {
+                                Text(
+                                    "Favorites",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (currentTab == MainTab.FAVORITES) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = navItemColors
                         )
                     }
                 }
@@ -315,7 +376,8 @@ fun MainScreen(
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri)
                         },
                         onSearchActive = { isSearchActive = it },
-                        onLoadMoreCallLogs = onLoadMoreCallLogs
+                        onLoadMoreCallLogs = onLoadMoreCallLogs,
+                        scrollToTopTrigger = dialerScrollToTopTrigger
                     )
                     MainTab.CONTACTS -> ContactsScreen(
                         contacts = contacts,
@@ -340,13 +402,15 @@ fun MainScreen(
                         onContactClick = { name, number, photoUri, contact ->
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri, contact)
                         },
-                        onSearchActive = { isSearchActive = it }
+                        onSearchActive = { isSearchActive = it },
+                        scrollToTopTrigger = contactsScrollToTopTrigger
                     )
                     MainTab.MESSAGES -> MessagesScreen(
                         contacts = contacts,
                         onCallClick = { num -> onCallClick(num, 0) },
                         onOpenThread = { thread -> activeChatThread = thread },
-                        onSearchActive = { isSearchActive = it }
+                        onSearchActive = { isSearchActive = it },
+                        scrollToTopTrigger = messagesScrollToTopTrigger
                     )
                     MainTab.FAVORITES -> FavoritesScreen(
                         favorites = favorites,
@@ -367,7 +431,8 @@ fun MainScreen(
                         },
                         onContactClick = { name, number, photoUri, contact ->
                             selectedContactDetails = ContactDetailSelection(name, number, photoUri, contact)
-                        }
+                        },
+                        scrollToTopTrigger = favoritesScrollToTopTrigger
                     )
                 }
             }

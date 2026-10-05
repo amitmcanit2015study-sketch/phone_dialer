@@ -15,6 +15,7 @@ import com.amitbharat.phonedialer.ui.components.ContactActionButtons
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.amitbharat.phonedialer.ui.components.simpleScrollbar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -45,6 +46,7 @@ fun ContactsScreen(
     onSyncDeviceContacts: () -> Unit,
     onContactClick: (name: String, number: String, photoUri: String?, contact: Contact) -> Unit,
     onSearchActive: (Boolean) -> Unit = {},
+    scrollToTopTrigger: Int = 0,
     modifier: Modifier = Modifier
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -54,6 +56,12 @@ fun ContactsScreen(
     val focusRequester = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(scrollToTopTrigger) {
+        if (scrollToTopTrigger > 0) {
+            listState.animateScrollToItem(0)
+        }
+    }
 
     val density = androidx.compose.ui.platform.LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
@@ -157,7 +165,8 @@ fun ContactsScreen(
                             state = listState,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(end = 26.dp),
+                                .padding(end = 28.dp)
+                                .simpleScrollbar(state = listState, width = 6.dp, paddingEnd = 2.dp),
                             contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp)
                         ) {
                             items(filteredContacts, key = { it.id }) { contact ->

@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.CircleShape
@@ -76,10 +77,10 @@ fun ContactDetailsScreen(
     }
 
     var selectedFilter by remember { mutableStateOf<CallType?>(null) } // null = All
-    var visibleLimit by remember { mutableIntStateOf(15) }
+    var visibleLimit by remember { mutableIntStateOf(10) }
 
     LaunchedEffect(selectedFilter) {
-        visibleLimit = 15
+        visibleLimit = 10
     }
 
     val missedCount = remember(filteredLogs) {
@@ -104,6 +105,21 @@ fun ContactDetailsScreen(
 
     val pagedLogs = remember(displayedLogs, visibleLimit) {
         displayedLogs.take(visibleLimit)
+    }
+
+    val listState = rememberLazyListState()
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val total = listState.layoutInfo.totalItemsCount
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            total > 0 && lastVisible >= total - 2 && displayedLogs.size > visibleLimit
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value) {
+            visibleLimit = (visibleLimit + 10).coerceAtMost(displayedLogs.size)
+        }
     }
 
     val totalDuration = remember(filteredLogs) { filteredLogs.sumOf { it.duration } }
@@ -153,6 +169,7 @@ fun ContactDetailsScreen(
         }
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -447,7 +464,7 @@ fun ContactDetailsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp)
-                                .clickable { visibleLimit += 20 },
+                                .clickable { visibleLimit = (visibleLimit + 10).coerceAtMost(displayedLogs.size) },
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                             shape = RoundedCornerShape(12.dp)
                         ) {

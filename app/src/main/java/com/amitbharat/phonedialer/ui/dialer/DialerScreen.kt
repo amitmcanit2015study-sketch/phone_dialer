@@ -37,11 +37,17 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.amitbharat.phonedialer.model.CallLogItem
@@ -101,6 +107,19 @@ private fun extractOnlyDigits(raw: String): String {
     return sb.toString()
 }
 
+private fun extractDialableFromClipboard(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    val len = raw.length
+    val sb = StringBuilder(len)
+    for (i in 0 until len) {
+        val c = raw[i]
+        if (c in '0'..'9' || c == '+' || c == '*' || c == '#') sb.append(c)
+    }
+    val res = sb.toString()
+    val digitCount = res.count { it in '0'..'9' }
+    return if (digitCount >= 2) res else null
+}
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun DialerScreen(
@@ -114,6 +133,7 @@ fun DialerScreen(
     onContactClick: (name: String, number: String, photoUri: String?) -> Unit,
     onSearchActive: (Boolean) -> Unit = {},
     onLoadMoreCallLogs: (() -> Unit)? = null,
+    scrollToTopTrigger: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -126,12 +146,97 @@ fun DialerScreen(
     val defaultSim = remember(simCards) { simCards.find { it.isDefault } }
     val hasDefaultSim = remember(defaultSim, simCards) { defaultSim != null || simCards.size <= 1 }
 
-    var enteredNumber by remember { mutableStateOf("") }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val editTextRef = remember { mutableStateOf<androidx.appcompat.widget.AppCompatEditText?>(null) }
+    var numberFieldState by remember { mutableStateOf(TextFieldValue("")) }
+    val enteredNumber = numberFieldState.text
+
     var isDialpadOpen by remember { mutableStateOf(false) }
     var isSearchOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var showPasteMenu by remember { mutableStateOf(false) }
     var playingAudioPath by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(scrollToTopTrigger) {
+        if (scrollToTopTrigger > 0) {
+            isDialpadOpen = false
+            listState.animateScrollToItem(0)
+        }
+    }
+
+    fun copyCurrentNumber() {
+        val et = editTextRef.value
+        val current = et?.text?.toString() ?: numberFieldState.text
+        if (current.isNotBlank()) {
+            val sStart = et?.selectionStart ?: numberFieldState.selection.min
+            val sEnd = et?.selectionEnd ?: numberFieldState.selection.max
+            val toCopy = if (sStart != sEnd && sStart >= 0 && sEnd >= 0) {
+                val start = minOf(sStart, sEnd).coerceIn(0, current.length)
+                val end = maxOf(sStart, sEnd).coerceIn(0, current.length)
+                current.substring(start, end)
+            } else {
+                current
+            }
+            val systemClipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            systemClipboard?.setPrimaryClip(android.content.ClipData.newPlainText("phone_number", toCopy))
+            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(toCopy))
+            Toast.makeText(context, "Copied: $toCopy", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun pasteToDialer() {
+        try {
+            val systemClipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            val clipText = if (systemClipboard?.hasPrimaryClip() == true) {
+                systemClipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
+            } else null
+            val clip = if (!clipText.isNullOrBlank()) clipText else clipboardManager.getText()?.text?.trim()
+
+            if (!clip.isNullOrBlank()) {
+                val sb = StringBuilder()
+                for (c in clip) {
+                    if (c in '0'..'9' || c == '+' || c == '*' || c == '#') {
+                        sb.append(c)
+                    }
+                }
+                val dialable = sb.toString()
+                if (dialable.isNotBlank()) {
+                    val et = editTextRef.value
+                    if (et != null) {
+                        val sStart = et.selectionStart
+                        val sEnd = et.selectionEnd
+                        val text = et.text
+                        if (text != null) {
+                            val start = minOf(sStart, sEnd).coerceIn(0, text.length)
+                            val end = maxOf(sStart, sEnd).coerceIn(0, text.length)
+                            text.replace(start, end, dialable)
+                            et.setSelection(start + dialable.length)
+                        }
+                    } else {
+                        val current = numberFieldState.text
+                        val sel = numberFieldState.selection
+                        val start = sel.min.coerceIn(0, current.length)
+                        val end = sel.max.coerceIn(0, current.length)
+                        val updated = current.replaceRange(start, end, dialable)
+                        val nextPos = start + dialable.length
+                        numberFieldState = TextFieldValue(
+                            text = updated,
+                            selection = TextRange(nextPos)
+                        )
+                    }
+                    isDialpadOpen = true
+                    Toast.makeText(context, "Pasted: $dialable", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "No dialable number in clipboard", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Could not paste", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val density = androidx.compose.ui.platform.LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
@@ -160,6 +265,20 @@ fun DialerScreen(
         }
     }
 
+    val shouldLoadMore = remember {
+        derivedStateOf {
+            val total = listState.layoutInfo.totalItemsCount
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            total > 0 && lastVisible >= total - 3
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore.value) {
+        if (shouldLoadMore.value && onLoadMoreCallLogs != null) {
+            onLoadMoreCallLogs()
+        }
+    }
+
     BackHandler(enabled = isDialpadOpen || isSearchOpen || enteredNumber.isNotEmpty()) {
         when {
             isDialpadOpen -> isDialpadOpen = false
@@ -168,7 +287,7 @@ fun DialerScreen(
                 searchQuery = ""
                 onSearchActive(false)
             }
-            enteredNumber.isNotEmpty() -> enteredNumber = ""
+            enteredNumber.isNotEmpty() -> numberFieldState = TextFieldValue("")
         }
     }
 
@@ -276,19 +395,6 @@ fun DialerScreen(
     val matchedContacts = remember(enteredNumber, allContacts) {
         if (enteredNumber.isEmpty()) emptyList()
         else T9SearchEngine.search(enteredNumber, allContacts)
-    }
-
-    fun handleKeyPress(char: String) {
-        if (isVibrationEnabled) {
-            vibrator?.vibrate(VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE))
-        }
-        enteredNumber += char
-    }
-
-    fun handleBackspace() {
-        if (enteredNumber.isNotEmpty()) {
-            enteredNumber = enteredNumber.dropLast(1)
-        }
     }
 
     var activeMediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -605,7 +711,7 @@ fun DialerScreen(
                                 }
                             }
 
-                        if (onLoadMoreCallLogs != null && callLogs.size >= 40) {
+                        if (onLoadMoreCallLogs != null && callLogs.isNotEmpty()) {
                             item(key = "btn_load_more_call_logs") {
                                 Card(
                                     modifier = Modifier
@@ -630,7 +736,7 @@ fun DialerScreen(
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         Text(
-                                            text = "Load Older Calls (${callLogs.size} loaded)",
+                                            text = "Load Older Calls (+15 days)",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.sp,
                                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -646,18 +752,111 @@ fun DialerScreen(
     }
 
         val handleKeyPress: (String) -> Unit = { digit ->
-            enteredNumber += digit
+            val et = editTextRef.value
+            if (et != null) {
+                val sStart = et.selectionStart
+                val sEnd = et.selectionEnd
+                val text = et.text
+                if (text != null) {
+                    val start = minOf(sStart, sEnd).coerceIn(0, text.length)
+                    val end = maxOf(sStart, sEnd).coerceIn(0, text.length)
+                    text.replace(start, end, digit)
+                    et.setSelection(start + digit.length)
+                }
+            } else {
+                val current = numberFieldState.text
+                val sel = numberFieldState.selection
+                val start = sel.min.coerceIn(0, current.length)
+                val end = sel.max.coerceIn(0, current.length)
+                val updated = current.replaceRange(start, end, digit)
+                val nextPos = start + digit.length
+                numberFieldState = TextFieldValue(
+                    text = updated,
+                    selection = TextRange(nextPos)
+                )
+            }
         }
 
         val handleBackspace: () -> Unit = {
-            if (enteredNumber.isNotEmpty()) {
-                enteredNumber = enteredNumber.dropLast(1)
+            val et = editTextRef.value
+            if (et != null) {
+                val sStart = et.selectionStart
+                val sEnd = et.selectionEnd
+                val text = et.text
+                if (text != null && text.isNotEmpty()) {
+                    val start = minOf(sStart, sEnd)
+                    val end = maxOf(sStart, sEnd)
+                    if (start != end && start >= 0 && end <= text.length) {
+                        // User selected text (whether all or part)! Delete entire selection in one click!
+                        text.delete(start, end)
+                    } else if (start > 0) {
+                        // No selection: delete character-by-character
+                        text.delete(start - 1, start)
+                    } else {
+                        text.delete(text.length - 1, text.length)
+                    }
+                }
+            } else {
+                val current = numberFieldState.text
+                if (current.isNotEmpty()) {
+                    val sel = numberFieldState.selection
+                    if (!sel.collapsed) {
+                        val start = sel.min
+                        val end = sel.max
+                        val updated = current.removeRange(start, end)
+                        numberFieldState = TextFieldValue(
+                            text = updated,
+                            selection = TextRange(start.coerceIn(0, updated.length))
+                        )
+                    } else {
+                        val cursor = sel.start
+                        if (cursor > 0) {
+                            val updated = current.removeRange(cursor - 1, cursor)
+                            numberFieldState = TextFieldValue(
+                                text = updated,
+                                selection = TextRange(cursor - 1)
+                            )
+                        } else if (current.isNotEmpty()) {
+                            val updated = current.dropLast(1)
+                            numberFieldState = TextFieldValue(
+                                text = updated,
+                                selection = TextRange(updated.length)
+                            )
+                        }
+                    }
+                }
             }
+        }
+
+        val handleClearAll: () -> Unit = {
+            editTextRef.value?.text?.clear()
+            numberFieldState = TextFieldValue("")
         }
 
         val handleLongPressDigit: (Int) -> Unit = { speedIndex ->
             if (speedIndex == 0) {
-                enteredNumber += "+"
+                val et = editTextRef.value
+                if (et != null) {
+                    val sStart = et.selectionStart
+                    val sEnd = et.selectionEnd
+                    val text = et.text
+                    if (text != null) {
+                        val start = minOf(sStart, sEnd).coerceIn(0, text.length)
+                        val end = maxOf(sStart, sEnd).coerceIn(0, text.length)
+                        text.replace(start, end, "+")
+                        et.setSelection(start + 1)
+                    }
+                } else {
+                    val current = numberFieldState.text
+                    val sel = numberFieldState.selection
+                    val start = sel.min.coerceIn(0, current.length)
+                    val end = sel.max.coerceIn(0, current.length)
+                    val updated = current.replaceRange(start, end, "+")
+                    numberFieldState = TextFieldValue(
+                        text = updated,
+                        selection = TextRange(start + 1)
+                    )
+                }
             } else {
                 val sp = speedDials.find { it.digit == speedIndex }
                 if (sp != null) {
@@ -666,7 +865,7 @@ fun DialerScreen(
             }
         }
 
-        // Dual Floating Action Buttons: Search FAB + Keypad FAB (Hidden when search is open)
+        // Dual Floating Action Buttons: Search FAB + Keypad FAB
         if (!isDialpadOpen && !isSearchOpen) {
             Row(
                 modifier = Modifier
@@ -837,22 +1036,179 @@ fun DialerScreen(
                     }
 
                     Row(
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = enteredNumber,
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.weight(1f)
-                        )
                         if (enteredNumber.isNotEmpty()) {
-                            IconButton(onClick = { handleBackspace() }) {
-                                Icon(Icons.AutoMirrored.Filled.Backspace, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.size(36.dp))
+                        }
+
+                        val onSurface = MaterialTheme.colorScheme.onSurface
+                        val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+                        val primaryColor = MaterialTheme.colorScheme.primary
+                        val textColorArgb = remember(onSurface) { onSurface.toArgb() }
+                        val hintColorArgb = remember(onSurfaceVariant) { onSurfaceVariant.copy(alpha = 0.45f).toArgb() }
+                        val primaryColorArgb = remember(primaryColor) { primaryColor.toArgb() }
+
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AndroidView(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp),
+                                factory = { ctx ->
+                                    androidx.appcompat.widget.AppCompatEditText(ctx).apply {
+                                        showSoftInputOnFocus = false
+                                        isFocusable = true
+                                        isFocusableInTouchMode = true
+                                        setTextIsSelectable(true)
+                                        gravity = android.view.Gravity.CENTER
+                                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                        setTextColor(textColorArgb)
+                                        setHintTextColor(hintColorArgb)
+                                        highlightColor = primaryColorArgb and 0x00FFFFFF or 0x44000000
+                                        hint = "Dial a number"
+                                        textSize = 28f
+                                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                        maxLines = 1
+                                        isSingleLine = true
+
+                                        // Suppress system insertion action mode so "Paste" is never shown below the input box on tap
+                                        customInsertionActionModeCallback = object : android.view.ActionMode.Callback {
+                                            override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean = false
+                                            override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean = false
+                                            override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?): Boolean = false
+                                            override fun onDestroyActionMode(mode: android.view.ActionMode?) {}
+                                        }
+
+                                        // Long press in input box shows the Paste menu
+                                        setOnLongClickListener {
+                                            showPasteMenu = true
+                                            true
+                                        }
+
+                                        addTextChangedListener(object : android.text.TextWatcher {
+                                            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                                            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                                                val newText = s?.toString() ?: ""
+                                                if (numberFieldState.text != newText) {
+                                                    val sStart = selectionStart
+                                                    val sEnd = selectionEnd
+                                                    numberFieldState = TextFieldValue(
+                                                        text = newText,
+                                                        selection = TextRange(
+                                                            sStart.coerceIn(0, newText.length),
+                                                            sEnd.coerceIn(0, newText.length)
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            override fun afterTextChanged(s: android.text.Editable?) {}
+                                        })
+                                        editTextRef.value = this
+                                    }
+                                },
+                                update = { et ->
+                                    if (et.text?.toString() != numberFieldState.text) {
+                                        val sStart = et.selectionStart
+                                        val sEnd = et.selectionEnd
+                                        et.setText(numberFieldState.text)
+                                        val len = numberFieldState.text.length
+                                        et.setSelection(sStart.coerceIn(0, len), sEnd.coerceIn(0, len))
+                                    }
+                                    val len = et.text?.length ?: 0
+                                    et.textSize = if (len > 14) 20f else if (len > 10) 24f else 28f
+                                    et.setTextColor(textColorArgb)
+                                    et.setHintTextColor(hintColorArgb)
+                                }
+                            )
+
+                            // Clean floating menu shown ONLY on long press in the input box
+                            DropdownMenu(
+                                expanded = showPasteMenu,
+                                onDismissRequest = { showPasteMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Paste", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        }
+                                    },
+                                    onClick = {
+                                        showPasteMenu = false
+                                        pasteToDialer()
+                                    }
+                                )
+                                if (enteredNumber.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Select All", fontSize = 14.sp)
+                                            }
+                                        },
+                                        onClick = {
+                                            showPasteMenu = false
+                                            editTextRef.value?.selectAll()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Copy", fontSize = 14.sp)
+                                            }
+                                        },
+                                        onClick = {
+                                            showPasteMenu = false
+                                            copyCurrentNumber()
+                                        }
+                                    )
+                                }
                             }
+                        }
+
+                        if (enteredNumber.isNotEmpty()) {
+                            IconButton(
+                                onClick = { copyCurrentNumber() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = "Copy",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .combinedClickable(
+                                        onClick = { handleBackspace() },
+                                        onLongClick = { handleClearAll() }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Backspace,
+                                    contentDescription = "Backspace",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        } else {
+                            Spacer(Modifier.width(38.dp))
                         }
                     }
 
